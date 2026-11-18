@@ -1,5 +1,6 @@
 package com.reidig.app.ui
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -78,12 +79,53 @@ class SignupDraft {
     }
 }
 
+/** Membawa nilai dari Simulasi Transaksi Beranda ke layar Transaksi (Handoff §6). */
+class TradePrefillDraft {
+    var mode: String = "beli" // "beli" | "jual"
+    var unit: String = "rp"   // "rp" | "gr"
+    var value: String = ""
+    var hasPending: Boolean = false
+
+    fun set(mode: String, unit: String, value: String) {
+        this.mode = mode
+        this.unit = unit
+        this.value = value
+        this.hasPending = true
+    }
+
+    fun consume(): Triple<String, String, String>? {
+        if (!hasPending) return null
+        hasPending = false
+        return Triple(mode, unit, value)
+    }
+}
+
+/** Membawa nominal & target emas dari kartu promo Tabungan Rutin Beranda ke form buat plan (Handoff §6). */
+class RoutinePlanPrefillDraft {
+    var monthlyAmount: Long = 0L
+    var targetGrams: Double? = null
+    var hasPending: Boolean = false
+
+    fun set(monthlyAmount: Long, targetGrams: Double?) {
+        this.monthlyAmount = monthlyAmount
+        this.targetGrams = targetGrams
+        this.hasPending = true
+    }
+
+    fun consume(): Pair<Long, Double?>? {
+        if (!hasPending) return null
+        hasPending = false
+        return monthlyAmount to targetGrams
+    }
+}
+
 class KycDraft {
     var consentAgreed: Boolean = false
     var phone: String = ""
     var channel: String = "WhatsApp"
 
     // Step 2 & 3: e-KTP OCR & Data diri
+    var ktpPhoto: Bitmap? = null
     var nik: String = "3671 0151 0203 0002"
     var name: String = ""
     var gender: String = "Perempuan"
@@ -129,6 +171,7 @@ class KycDraft {
         consentAgreed = false
         phone = ""
         channel = "WhatsApp"
+        ktpPhoto = null
         nik = "3671 0151 0203 0002"
         name = defaultName.trim().ifBlank { "Indriana Putri" }
         gender = "Perempuan"

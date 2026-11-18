@@ -716,6 +716,20 @@ object PrototypeIcons {
             listOf("M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"),
         )
     }
+
+    val CaretUpFilled: ImageVector by lazy {
+        tablerFilledVector(
+            "CaretUpFilled",
+            "M11.3 7.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 -.7 1.7h-12a1 1 0 0 1 -.7 -1.7z",
+        )
+    }
+
+    val CaretDownFilled: ImageVector by lazy {
+        tablerFilledVector(
+            "CaretDownFilled",
+            "M18 9a1 1 0 0 1 .7 1.7l-6 6a1 1 0 0 1 -1.4 0l-6 -6a1 1 0 0 1 .7 -1.7z",
+        )
+    }
 }
 
 /** Latar gelap dengan cahaya ungu di tengah. */
@@ -851,6 +865,6 @@ fun VerifiedBanner(text: AnnotatedString) {
 
 @ScreenPreview
 @Composable
-private fun GoldBarPreview() = ReidigTheme {
+private fun GoldBarPreview() = GoldinTheme {
     Box(Modifier.background(Palette.Paper).padding(24.dp)) { GoldBarArt(260.dp) }
 }

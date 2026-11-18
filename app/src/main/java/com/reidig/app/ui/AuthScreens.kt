@@ -804,7 +804,7 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .then(rememberFadeUpModifier(delayMillis = 60)),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 3.5.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Email",
                         fontFamily = BodyFontFamily,
@@ -835,7 +835,7 @@ fun LoginScreen(
                     isError = emailError != null || credentialError,
                 )
                 if (emailError != null) {
-                    FieldErrorMessage(emailError!!, modifier = Modifier.padding(start = 3.5.dp))
+                    FieldErrorMessage(emailError!!)
                 }
             }
 
@@ -845,7 +845,7 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .then(rememberFadeUpModifier(delayMillis = 120)),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 3.5.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Kata sandi",
                         fontFamily = BodyFontFamily,
@@ -892,7 +892,7 @@ fun LoginScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Box(modifier = Modifier.weight(1f, fill = false).padding(start = 3.5.dp)) {
+                    Box(modifier = Modifier.weight(1f, fill = false)) {
                         when {
                             passwordError != null -> FieldErrorMessage(passwordError!!)
                             credentialError -> FieldErrorMessage("Email atau kata sandi salah")
@@ -1709,7 +1709,7 @@ fun ForgotPinPasswordScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(GoldinControl.TouchMin),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 GoldinIconButton(
@@ -1952,7 +1952,7 @@ fun ForgotPinOtpScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(GoldinControl.TouchMin),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 GoldinIconButton(
@@ -2250,7 +2250,7 @@ fun ForgotPinNewScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(GoldinControl.TouchMin),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 GoldinIconButton(
@@ -3791,7 +3791,6 @@ fun RegisterProfileScreen(env: AppEnv, signup: SignupDraft, onBack: () -> Unit, 
                         label = "dobBorder",
                     )
                     val innerShape = RoundedCornerShape(GoldinRadius.Lg)
-                    val outerShape = RoundedCornerShape(GoldinRadius.Lg + GoldinBorder.FocusRing)
 
                     Column {
                         GoldinFieldLabel(label = "Tanggal lahir", mandatory = true, isError = dobUnder)
@@ -3799,9 +3798,8 @@ fun RegisterProfileScreen(env: AppEnv, signup: SignupDraft, onBack: () -> Unit, 
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(dobRingColor, outerShape)
-                                .padding(GoldinBorder.FocusRing)
                                 .height(GoldinControl.SizeLg)
+                                .goldinFocusHalo(dobRingColor)
                                 .clip(innerShape)
                                 .background(Color.White)
                                 .border(GoldinBorder.Default, dobBorderColor, innerShape)
@@ -4203,14 +4201,28 @@ fun RegisterDoneScreen(env: AppEnv, signup: SignupDraft, onStart: () -> Unit) {
                     color = Palette.Primary200,
                 )
                 Spacer(Modifier.height(GoldinSpace.Xs))
-                Text(
-                    "0,0000 gr",
-                    color = Palette.Gold,
-                    fontFamily = MonoFontFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 28.sp,
-                    lineHeight = 36.sp,
-                )
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        "0,0000",
+                        color = Palette.Gold,
+                        fontFamily = MonoFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 28.sp,
+                        lineHeight = 36.sp,
+                    )
+                    Text(
+                        "gr",
+                        color = Palette.Gold,
+                        fontFamily = BodyFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                        lineHeight = 26.sp,
+                        modifier = Modifier.padding(bottom = 2.dp),
+                    )
+                }
                 Text(
                     "≈ Rp0",
                     style = GoldinTypography.bodyMd,
@@ -4227,10 +4239,15 @@ fun RegisterDoneScreen(env: AppEnv, signup: SignupDraft, onStart: () -> Unit) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Harga beli hari ini", style = GoldinTypography.bodySm, color = Palette.Primary200)
                     Text(
-                        "${rupiah(buyPrice)}/gr",
+                        text = buildAnnotatedString {
+                            withStyle(SpanStyle(fontFamily = MonoFontFamily, fontWeight = FontWeight.SemiBold)) {
+                                append(rupiah(buyPrice))
+                            }
+                            withStyle(SpanStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.SemiBold)) {
+                                append("/gr")
+                            }
+                        },
                         color = Palette.Primary50,
-                        fontFamily = MonoFontFamily,
-                        fontWeight = FontWeight.SemiBold,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
                     )

@@ -207,6 +207,8 @@ fun ReidigApp(repo: MockRepository) {
     val nav = rememberNavController()
     val signup = remember { SignupDraft() }
     val kyc = remember { KycDraft() }
+    val tradePrefill = remember { TradePrefillDraft() }
+    val routinePlanPrefill = remember { RoutinePlanPrefillDraft() }
     // Hasil transaksi terakhir untuk layar sukses.
     val results = remember { TransactionResults() }
     val backStack by nav.currentBackStackEntryAsState()
@@ -215,10 +217,32 @@ fun ReidigApp(repo: MockRepository) {
     var pinToastMessage by remember { mutableStateOf<String?>(null) }
     var authToastMessage by remember { mutableStateOf<String?>(null) }
     var autoOpenBiometricOnPin by remember { mutableStateOf(false) }
+    var kycGateSheet by remember { mutableStateOf<String?>(null) } // "need" | "wait"
 
     fun enterMain() = nav.navigate("home") { popUpTo(0) { inclusive = true } }
+    fun startKycFlow() {
+        val user = state.user
+        kyc.reset(
+            defaultName = user?.name?.takeIf { it.isNotBlank() } ?: signup.name,
+            defaultDob = user?.birthDate?.takeIf { it.isNotBlank() } ?: signup.dob,
+        )
+        nav.navigate("kyc/consent")
+    }
     fun requireVerified(next: String) {
-        if (state.user?.verified == true) nav.navigate(next) else nav.navigate("kyc/consent")
+        val user = state.user
+        when {
+            user?.verified == true -> nav.navigate(next)
+            user?.isKycPending == true -> kycGateSheet = "wait"
+            else -> kycGateSheet = "need"
+        }
+    }
+    fun requireVerifiedTab(tabRoute: String) {
+        val user = state.user
+        when {
+            user?.verified == true -> nav.switchTab(tabRoute)
+            user?.isKycPending == true -> kycGateSheet = "wait"
+            else -> kycGateSheet = "need"
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -427,44 +451,126 @@ fun ReidigApp(repo: MockRepository) {
                     RegisterDoneScreen(env, signup, onStart = ::enterMain)
                 }
 
-                composable("kyc/consent") { KycConsentScreen({ nav.popBackStack() }) { nav.navigate("kyc/phone") } }
-                composable("kyc/phone") { KycPhoneScreen(kyc, { nav.popBackStack() }) { nav.navigate("kyc/channel") } }
-                composable("kyc/channel") { KycChannelScreen(kyc, { nav.popBackStack() }) { nav.navigate("kyc/otp") } }
-                composable("kyc/otp") {
-                    OtpScreen(
-                        title = "Verifikasi nomor HP",
-                        step = 2 to 5,
-                        sentVia = "Kode OTP dikirim lewat ${kyc.channel} ke",
-                        target = "+62 ${kyc.phone}",
-                        demoCode = DEMO_PHONE_OTP,
+                composable("kyc/consent") {
+                    KycConsentScreen(
                         onBack = { nav.popBackStack() },
-                    ) {
-                        nav.navigate("kyc/scan") { popUpTo("kyc/phone") }
-                    }
+                        onNext = { nav.navigate("kyc/phone") },
+                    )
                 }
-                composable("kyc/scan") { KycScanIdScreen({ nav.popBackStack() }) { nav.navigate("kyc/review") } }
-                composable("kyc/review") {
-                    KycReviewScreen(signup, kyc, { nav.popBackStack() }, onRescan = { nav.popBackStack() }) { nav.navigate("kyc/liveness") }
+                composable("kyc/phone") {
+                    KycPhoneScreen(
+                        kyc = kyc,
+                        onBack = { nav.popBackStack() },
+                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onNext = { nav.navigate("kyc/otp") },
+                    )
                 }
-                composable("kyc/liveness") { KycLivenessIntroScreen({ nav.popBackStack() }) { nav.navigate("kyc/face") } }
+                composable("kyc/otp") {
+                    KycPhoneOtpScreen(
+                        kyc = kyc,
+                        onBack = { nav.popBackStack() },
+                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onVerified = {
+                            nav.navigate("kyc/ktp") { popUpTo("kyc/phone") }
+                        },
+                    )
+                }
+                composable("kyc/ktp") {
+                    KycKtpIntroScreen(
+                        onBack = { nav.popBackStack() },
+                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onNext = { nav.navigate("kyc/cam") },
+                    )
+                }
+                composable("kyc/cam") {
+                    KycScanIdScreen(
+                        kyc = kyc,
+                        onBack = { nav.popBackStack() },
+                        onCaptured = { nav.navigate("kyc/data") },
+                    )
+                }
+                composable("kyc/data") {
+                    KycDataScreen(
+                        signup = signup,
+                        kyc = kyc,
+                        onBack = { nav.popBackStack("kyc/ktp", inclusive = false) },
+                        onRetakeKtp = { nav.popBackStack() },
+                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onNext = { nav.navigate("kyc/addr") },
+                    )
+                }
+                composable("kyc/addr") {
+                    KycAddressScreen(
+                        kyc = kyc,
+                        onBack = { nav.popBackStack() },
+                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onNext = { nav.navigate("kyc/info") },
+                    )
+                }
+                composable("kyc/info") {
+                    KycInfoScreen(
+                        kyc = kyc,
+                        onBack = { nav.popBackStack() },
+                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onNext = { nav.navigate("kyc/face") },
+                    )
+                }
                 composable("kyc/face") {
-                    KycFaceScanScreen({ nav.popBackStack() }) { nav.navigate("kyc/pin") { popUpTo("kyc/liveness") } }
+                    KycFaceIntroScreen(
+                        onBack = { nav.popBackStack() },
+                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onStart = { nav.navigate("kyc/face-cam") },
+                    )
+                }
+                composable("kyc/face-cam") {
+                    KycFaceScanScreen(
+                        onBack = { nav.popBackStack() },
+                        onVerified = { nav.navigate("kyc/pin") { popUpTo("kyc/face") } },
+                    )
                 }
                 composable("kyc/pin") {
-                    KycPinScreen(env, kyc, { nav.popBackStack() }) { nav.navigate("kyc/done") { popUpTo("home") } }
+                    KycPinScreen(
+                        env = env,
+                        kyc = kyc,
+                        onBack = { nav.popBackStack() },
+                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onDone = { nav.navigate("kyc/done") { popUpTo("home") } },
+                    )
                 }
-                composable("kyc/done") { KycVerifiedScreen { nav.navigate("catalog") { popUpTo("home") } } }
+                composable("kyc/done") {
+                    KycVerifiedScreen(onDone = ::enterMain)
+                }
 
                 composable("home") {
                     HomeScreen(
-                        env,
-                        onBuy = { nav.switchTab("catalog") },
-                        onSell = { nav.switchTab("sell-tab") },
-                        onPrint = { nav.switchTab("print-tab") },
+                        env = env,
+                        onBuy = { requireVerifiedTab("catalog") },
+                        onSell = { requireVerifiedTab("sell-tab") },
+                        onPrint = { requireVerifiedTab("print-tab") },
                         onInstallment = { requireVerified("installment") },
-                        onWithdraw = { nav.switchTab("wallet") },
-                        onVerify = { nav.navigate("kyc/consent") },
+                        onWithdraw = { requireVerifiedTab("wallet") },
+                        onVerify = {
+                            if (state.user?.isKycPending == true) kycGateSheet = "wait" else startKycFlow()
+                        },
                         onPrices = { nav.navigate("prices") },
+                        onNotifications = { nav.navigate("notif") },
+                        tradePrefill = tradePrefill,
+                        routinePlanPrefill = routinePlanPrefill,
+                        onOpenRoutinePlans = { requireVerifiedTab("wallet") },
+                        onOpenRoutinePlanDetail = { _ -> requireVerifiedTab("wallet") },
+                        onCreateRoutinePlan = { requireVerifiedTab("wallet") },
+                    )
+                }
+                composable("notif") {
+                    NotificationScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onOpenTransaction = { txId ->
+                            // Hook ke Struk transaksi pada Tahap 5; sementara arahkan ke Portofolio/Mutasi
+                            if (txId != null) {
+                                nav.switchTab("wallet")
+                            }
+                        },
                     )
                 }
                 composable("prices") { PriceTableScreen(env) { nav.popBackStack() } }
@@ -603,7 +709,9 @@ fun ReidigApp(repo: MockRepository) {
                 composable("account") {
                     AccountScreen(
                         env,
-                        onVerify = { nav.navigate("kyc/consent") },
+                        onVerify = {
+                            if (state.user?.isKycPending == true) kycGateSheet = "wait" else startKycFlow()
+                        },
                         onInstallments = { requireVerified("installment") },
                         onLogout = {
                             repo.logout()
@@ -621,6 +729,18 @@ fun ReidigApp(repo: MockRepository) {
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp).fillMaxWidth(),
         ) { data ->
             Snackbar(data, containerColor = Palette.Ink, contentColor = Color.White, modifier = Modifier.padding(horizontal = 16.dp))
+        }
+        when (kycGateSheet) {
+            "need" -> VerificationGateDrawer(
+                onDismiss = { kycGateSheet = null },
+                onVerifyNow = {
+                    kycGateSheet = null
+                    startKycFlow()
+                },
+            )
+            "wait" -> PendingVerificationDrawer(
+                onDismiss = { kycGateSheet = null },
+            )
         }
     }
 }

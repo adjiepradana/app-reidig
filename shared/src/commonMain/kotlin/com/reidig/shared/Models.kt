@@ -308,10 +308,16 @@ data class AppState(
     val pinFailedAttempts: Int = 0,
     val isFirstTimeLogin: Boolean = true,
     val isBiometricEnabled: Boolean = false,
+    val hideHomeBalance: Boolean = true,
+    val hidePortfolioGold: Boolean = true,
+    val hidePortfolioCash: Boolean = true,
     val skus: List<Sku> = emptyList(),
-    val buybackPerGram: Long = 2_241_000L,
-    val askPricePerGram: Long = 2_287_500L,
+    val buybackPerGram: Long = 2_257_500L,
+    val askPricePerGram: Long = 2_315_000L,
+    val priceBaseAskPerGram: Long = 2_287_500L,
+    val priceUpdatedAtMs: Long = 0L,
     val priceUpdatedAtLabel: String = "12.30 WIB",
+    val priceFlash: String? = null,
     val walletBalance: Long = 0,
     val goldBalanceGrams: Double = 0.0,
     val lockedGoldGrams: Double = 0.0,
@@ -344,6 +350,14 @@ data class AppState(
     val freeGoldGrams: Double get() = (goldBalanceGrams - lockedGoldGrams).coerceAtLeast(0.0)
 
     val unreadNotificationCount: Int get() = notifications.count { !it.isRead }
+
+    /** Persentase perubahan harga beli hari ini terhadap harga acuan dasar (`BASE = Rp2.287.500`). */
+    val dayPriceChangePct: Double
+        get() = if (priceBaseAskPerGram > 0) {
+            (askPricePerGram - priceBaseAskPerGram).toDouble() / priceBaseAskPerGram.toDouble() * 100.0
+        } else {
+            0.0
+        }
 }
 
 class ReidigException(val code: String, message: String) : Exception(message)

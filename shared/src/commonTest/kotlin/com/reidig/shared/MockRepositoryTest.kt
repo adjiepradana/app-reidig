@@ -462,6 +462,56 @@ class MockRepositoryTest {
     }
 
     @Test
+    fun goldinHomeBalanceVisibilityPriceRefreshAndNotifications() {
+        demo()
+        // Tersembunyi default sesuai Handoff §6
+        assertTrue(state.hideHomeBalance)
+        assertTrue(state.hidePortfolioGold)
+        assertTrue(state.hidePortfolioCash)
+
+        // Toggle mata Beranda menyinkronkan kedua kartu Portofolio
+        repo.toggleHomeBalanceVisibility()
+        assertFalse(state.hideHomeBalance)
+        assertFalse(state.hidePortfolioGold)
+        assertFalse(state.hidePortfolioCash)
+
+        // Mata Portofolio independen
+        repo.togglePortfolioGoldVisibility()
+        assertTrue(state.hidePortfolioGold)
+        assertFalse(state.hidePortfolioCash)
+
+        // Refresh harga naik -> flash "up" + kelipatan 500
+        val beforeAsk = state.askPricePerGram
+        val flashUp = repo.refreshGoldPrice(formattedHm = "14.55", deltaOverride = 1_500L)
+        assertEquals("up", flashUp)
+        assertEquals("up", state.priceFlash)
+        assertEquals(beforeAsk + 1_500L, state.askPricePerGram)
+        assertEquals(0L, state.buybackPerGram % 500L)
+        assertEquals("14.55 WIB", state.priceUpdatedAtLabel)
+
+        // Refresh harga turun -> flash "down" lalu dibersihkan
+        val flashDown = repo.refreshGoldPrice(formattedHm = "14.56", deltaOverride = -1_000L)
+        assertEquals("down", flashDown)
+        repo.clearPriceFlash()
+        assertEquals(null, state.priceFlash)
+
+        // Notifikasi: baca satu, tandai semua dibaca, hapus
+        val initialUnread = state.unreadNotificationCount
+        assertTrue(initialUnread > 0)
+        val firstUnread = state.notifications.first { !it.isRead }
+        repo.markNotificationRead(firstUnread.id)
+        assertEquals(initialUnread - 1, state.unreadNotificationCount)
+
+        repo.markAllNotificationsRead()
+        assertEquals(0, state.unreadNotificationCount)
+
+        val beforeCount = state.notifications.size
+        repo.deleteNotification(firstUnread.id)
+        assertEquals(beforeCount - 1, state.notifications.size)
+        assertFalse(state.notifications.any { it.id == firstUnread.id })
+    }
+
+    @Test
     fun logoutClearsAccountData() {
         demo()
         repo.logout()

@@ -572,16 +572,16 @@ fun AccountScreen(env: AppEnv, onVerify: () -> Unit, onInstallments: () -> Unit,
                             Text(user?.name ?: "", fontFamily = TitleFontFamily, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Palette.Ink)
                             Text(user?.email ?: "", color = Palette.InkSecondary, fontFamily = BodyFontFamily, fontSize = 13.sp)
                             Spacer(Modifier.height(6.dp))
-                            if (user?.verified == true) {
-                                StatusChip("e-KYC Terverifikasi", ChipTone.GOOD)
-                            } else {
-                                StatusChip("Belum terverifikasi", ChipTone.WARN)
+                            when {
+                                user?.verified == true -> StatusChip("Terverifikasi", ChipTone.GOOD, PrototypeIcons.CircleCheckFilled)
+                                user?.isKycPending == true -> StatusChip("Sedang ditinjau", ChipTone.INFO, PrototypeIcons.Clock)
+                                else -> StatusChip("Belum terverifikasi", ChipTone.WARN, PrototypeIcons.AlertCircle)
                             }
                         }
                     }
-                    if (user?.verified != true) {
+                    if (user?.verified != true && user?.isKycPending != true) {
                         Spacer(Modifier.height(14.dp))
-                        PrimaryButton("Verifikasi identitas sekarang", onVerify)
+                        PrimaryButton("Verifikasi sekarang", onVerify)
                     }
                 }
             }

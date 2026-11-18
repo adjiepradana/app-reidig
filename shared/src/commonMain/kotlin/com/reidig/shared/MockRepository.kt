@@ -213,8 +213,13 @@ class MockRepository(
                 goldBalanceGrams = 2.4518,
                 lockedGoldGrams = 0.0,
                 avgBuyPricePerGram = 2_250_000L,
-                askPricePerGram = 2_287_500L,
-                buybackPerGram = 2_241_000L,
+                askPricePerGram = 2_315_000L,
+                buybackPerGram = 2_257_500L,
+                priceBaseAskPerGram = 2_287_500L,
+                priceUpdatedAtMs = now,
+                hideHomeBalance = true,
+                hidePortfolioGold = true,
+                hidePortfolioCash = true,
                 tokens = tokens,
                 transactions = seededTx,
                 bankAccounts = listOf(seededAccount),
@@ -810,6 +815,67 @@ class MockRepository(
     fun stopRoutinePlan(planId: String) {
         _state.update { s -> s.copy(routinePlans = s.routinePlans.filterNot { it.id == planId }) }
     }
+
+    // ----- Beranda: Visibilitas Saldo & Refresh Harga Emas -----
+
+    /** Toggle ikon mata di Beranda sekaligus menyinkronkan kedua kartu di Portofolio (Handoff §6). */
+    fun toggleHomeBalanceVisibility() {
+        _state.update { s ->
+            val next = !s.hideHomeBalance
+            s.copy(
+                hideHomeBalance = next,
+                hidePortfolioGold = next,
+                hidePortfolioCash = next,
+            )
+        }
+    }
+
+    /** Toggle mata kartu Tabungan Emas secara independen di Portofolio (Handoff §9). */
+    fun togglePortfolioGoldVisibility() {
+        _state.update { it.copy(hidePortfolioGold = !it.hidePortfolioGold) }
+    }
+
+    /** Toggle mata kartu Saldo Kas secara independen di Portofolio (Handoff §9). */
+    fun togglePortfolioCashVisibility() {
+        _state.update { it.copy(hidePortfolioCash = !it.hidePortfolioCash) }
+    }
+
+    /**
+     * Menyimulasikan pembaruan harga emas manual (`Main.dc.html` L4034–4042).
+     * Mengembalikan arah flash (`"up"`, `"down"`, atau `null`).
+     */
+    fun refreshGoldPrice(formattedHm: String? = null, deltaOverride: Long? = null): String? {
+        val current = _state.value.askPricePerGram
+        val rawDelta = deltaOverride ?: run {
+            val steps = listOf(-1_500L, -1_000L, -500L, 500L, 1_000L, 1_500L, 2_000L)
+            val idx = ((clock() / 100L + current / 500L) % steps.size).toInt().let { if (it < 0) it + steps.size else it }
+            steps[idx]
+        }
+        val nextAsk = roundTo500((current + rawDelta).coerceAtLeast(1_500_000L))
+        val nextBid = roundTo500((nextAsk * 0.9752).toLong())
+        val flash = when {
+            nextAsk > current -> "up"
+            nextAsk < current -> "down"
+            else -> null
+        }
+        val label = formattedHm?.let { "$it WIB" } ?: _state.value.priceUpdatedAtLabel
+        _state.update { s ->
+            s.copy(
+                askPricePerGram = nextAsk,
+                buybackPerGram = nextBid,
+                priceUpdatedAtMs = clock(),
+                priceUpdatedAtLabel = label,
+                priceFlash = flash,
+            )
+        }
+        return flash
+    }
+
+    fun clearPriceFlash() {
+        _state.update { it.copy(priceFlash = null) }
+    }
+
+    private fun roundTo500(value: Long): Long = ((value + 250L) / 500L) * 500L
 
     // ----- Notifikasi -----
 

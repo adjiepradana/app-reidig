@@ -69,7 +69,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
@@ -628,9 +632,29 @@ fun FormField(
 }
 
 /**
+ * Menggambar halo fokus luar 3dp (`box-shadow: 0 0 0 3px #d7d4fc`) di belakang komponen
+ * tanpa menggeser ukuran/perataan kotak `44dp` terhadap label di atasnya.
+ */
+internal fun Modifier.goldinFocusHalo(
+    color: Color,
+    cornerRadius: Dp = GoldinRadius.Lg,
+    spread: Dp = GoldinBorder.FocusRing,
+): Modifier = drawBehind {
+    if (color.alpha <= 0f) return@drawBehind
+    val s = spread.toPx()
+    val r = cornerRadius.toPx() + s
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(-s, -s),
+        size = Size(size.width + s * 2f, size.height + s * 2f),
+        cornerRadius = CornerRadius(r, r),
+    )
+}
+
+/**
  * Kolom input teks presisi sesuai Design System v2 & prototipe Goldin v1.2:
  * - Tinggi 44dp, radius 12dp, border 1dp
- * - Focus ring/halo luar konsentris 3dp (`box-shadow: 0 0 0 3px #d7d4fc`)
+ * - Focus ring/halo luar konsentris 3dp (`box-shadow: 0 0 0 3px #d7d4fc`) tanpa menggeser layout
  * - Border: error-600 (error), success-600 (success), primary-700 (focus), primary-600 (hover), neutral-300 (idle)
  * - Font input & placeholder: Geist 14sp (bukan Geist Mono untuk input editabel!)
  */
@@ -657,7 +681,6 @@ fun GoldinInputField(
     val isHovered by interactionSource.collectIsHoveredAsState()
 
     val innerShape = RoundedCornerShape(GoldinRadius.Lg)
-    val outerShape = RoundedCornerShape(GoldinRadius.Lg + GoldinBorder.FocusRing)
 
     val ringColor by animateColorAsState(
         targetValue = if (isFocused && !isError && enabled) Palette.Primary200 else Color.Transparent,
@@ -681,11 +704,10 @@ fun GoldinInputField(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(ringColor, outerShape)
-            .padding(GoldinBorder.FocusRing)
             .then(
-                if (singleLine) Modifier.height(minHeight) else Modifier.padding(0.dp)
+                if (singleLine) Modifier.height(minHeight) else Modifier
             )
+            .goldinFocusHalo(ringColor)
             .background(bgColor, innerShape)
             .border(GoldinBorder.Default, borderColor, innerShape),
         contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
@@ -696,20 +718,18 @@ fun GoldinInputField(
         ) {
             when {
                 prefix != null -> {
-                    Row(
+                    Box(
                         modifier = Modifier.padding(start = GoldinSpace.Md, end = GoldinSpace.Sm),
-                        verticalAlignment = Alignment.CenterVertically,
+                        contentAlignment = Alignment.CenterStart,
                     ) {
                         Text(
                             text = prefix,
-                            fontFamily = BodyFontFamily,
+                            fontFamily = MonoFontFamily,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
                             color = Palette.InkSecondary,
                         )
-                        Spacer(Modifier.width(10.dp))
-                        Box(Modifier.width(GoldinBorder.Default).height(20.dp).background(Palette.Line))
                     }
                 }
                 leadingIcon != null -> {
@@ -828,7 +848,6 @@ fun GoldinSelectField(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(GoldinBorder.FocusRing)
                 .height(GoldinControl.SizeLg)
                 .clip(shape)
                 .background(bgColor)
@@ -890,7 +909,6 @@ fun GoldinTextArea(
     val isHovered by interactionSource.collectIsHoveredAsState()
 
     val innerShape = RoundedCornerShape(GoldinRadius.Lg)
-    val outerShape = RoundedCornerShape(GoldinRadius.Lg + GoldinBorder.FocusRing)
     val ringColor by animateColorAsState(
         if (isFocused && error == null) Palette.Primary200 else Color.Transparent,
         tween(GoldinMotion.DurationColor),
@@ -915,8 +933,7 @@ fun GoldinTextArea(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(ringColor, outerShape)
-                .padding(GoldinBorder.FocusRing)
+                .goldinFocusHalo(ringColor)
                 .background(Color.White, innerShape)
                 .border(GoldinBorder.Default, borderColor, innerShape)
                 .padding(horizontal = GoldinSpace.Md, vertical = GoldinSpace.Sm),
@@ -1484,6 +1501,7 @@ fun CodeBoxes(
     error: Boolean = false,
     verified: Boolean = false,
     opacity: Float = 1f,
+    showCaret: Boolean = true,
 ) {
     val caretTransition = rememberInfiniteTransition(label = "codeBoxesCaret")
     val caretAlpha by caretTransition.animateFloat(
@@ -1515,7 +1533,7 @@ fun CodeBoxes(
     ) {
         repeat(total) { index ->
             val char = code.getOrNull(index)
-            val isActive = index == code.length && !verified && !error
+            val isActive = showCaret && index == code.length && !verified && !error
 
             val borderColor = when {
                 verified -> Palette.Good
@@ -2975,7 +2993,7 @@ fun VerificationGateDrawer(
     )
 }
 
-/** Drawer info saat e-KYC masih dalam peninjauan 1x24 jam (Handoff §5). */
+/** Drawer info saat e-KYC masih dalam peninjauan 1x24 jam (Handoff §5, `Main.dc.html` L4140). */
 @Composable
 fun PendingVerificationDrawer(
     onDismiss: () -> Unit,
@@ -2983,7 +3001,7 @@ fun PendingVerificationDrawer(
     GoldinActionDrawer(
         title = "Verifikasi sedang ditinjau",
         body = "Kamu bisa mulai transaksi setelah verifikasi selesai. Hasilnya akan kami kirim lewat notifikasi.",
-        tone = GoldinDialogTone.INFO,
+        tone = GoldinDialogTone.PRIMARY,
         icon = PrototypeIcons.Clock,
         onDismiss = onDismiss,
         buttons = listOf(
@@ -3138,7 +3156,7 @@ fun StickyTabHeader(
                 modifier = Modifier.align(Alignment.Center),
             )
             if (rightAction != null) {
-                Box(Modifier.align(Alignment.CenterEnd).offset(x = 10.dp)) {
+                Box(Modifier.align(Alignment.CenterEnd)) {
                     rightAction()
                 }
             }

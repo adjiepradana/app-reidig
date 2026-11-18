@@ -154,6 +154,7 @@ object Palette {
     val Neutral700 = Color(0xFF404040)
     val Neutral800 = Color(0xFF262626)
     val Neutral900 = Color(0xFF171717)    // toast pill bg
+    val Neutral950 = Color(0xFF0A0A0A)    // dark camera background
     val Scrim = Color(0x660F052C)         // rgba(15, 5, 44, 0.4)
 
     // Status / Semantic colors
@@ -180,6 +181,8 @@ object Palette {
     val Info50 = Color(0xFFEFF6FF)
     val Info100 = Color(0xFFDBEAFE)
     val Info200 = Color(0xFFBFDBFE)
+    val Info300 = Color(0xFF93C5FD)
+    val Info400 = Color(0xFF60A5FA)
     val Info500 = Color(0xFF3B82F6)
     val Info600 = Color(0xFF2563EB)
     val Info700 = Color(0xFF1D4ED8)
