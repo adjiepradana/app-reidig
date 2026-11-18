@@ -79,9 +79,90 @@ class SignupDraft {
 }
 
 class KycDraft {
+    var consentAgreed: Boolean = false
     var phone: String = ""
     var channel: String = "WhatsApp"
+
+    // Step 2 & 3: e-KTP OCR & Data diri
+    var nik: String = "3671 0151 0203 0002"
     var name: String = ""
+    var gender: String = "Perempuan"
+    var pob: String = "Tangerang"
+    var dob: String = "11/02/2003"
+    var dobUnder: Boolean = false
+    var agama: String = "Islam"
+    var kawin: String = "Belum kawin"
+    var ibuKandung: String = ""
+
+    // Step 4: Alamat e-KTP & Domisili
+    var prov: String = "Banten"
+    var kota: String = "Kota Tangerang"
+    var kec: String = "Karawaci"
+    var kel: String = "Bugel"
+    var alamat: String = "Vila Tangerang Elok A-19/10"
+    var rt: String = "008"
+    var rw: String = "007"
+    var kodepos: String = "15113"
+
+    var domSame: Boolean = true
+    var dProv: String = ""
+    var dKota: String = ""
+    var dKec: String = ""
+    var dKel: String = ""
+    var dAlamat: String = ""
+    var dRt: String = ""
+    var dRw: String = ""
+    var dKodepos: String = ""
+
+    // Step 5: Informasi tambahan
+    var pendidikan: String = ""
+    var pekerjaan: String = ""
+    var penghasilan: String = ""
+    var sumberDana: String = ""
+    var tujuan: String = ""
+
+    // Step 7: PIN & Biometrik
+    var pin: String = ""
+    var biometricEnabled: Boolean = false
+
+    fun reset(defaultName: String = "", defaultDob: String = "") {
+        consentAgreed = false
+        phone = ""
+        channel = "WhatsApp"
+        nik = "3671 0151 0203 0002"
+        name = defaultName.trim().ifBlank { "Indriana Putri" }
+        gender = "Perempuan"
+        pob = "Tangerang"
+        dob = defaultDob.ifBlank { "11/02/2003" }
+        dobUnder = false
+        agama = "Islam"
+        kawin = "Belum kawin"
+        ibuKandung = ""
+        prov = "Banten"
+        kota = "Kota Tangerang"
+        kec = "Karawaci"
+        kel = "Bugel"
+        alamat = "Vila Tangerang Elok A-19/10"
+        rt = "008"
+        rw = "007"
+        kodepos = "15113"
+        domSame = true
+        dProv = ""
+        dKota = ""
+        dKec = ""
+        dKel = ""
+        dAlamat = ""
+        dRt = ""
+        dRw = ""
+        dKodepos = ""
+        pendidikan = ""
+        pekerjaan = ""
+        penghasilan = ""
+        sumberDana = ""
+        tujuan = ""
+        pin = ""
+        biometricEnabled = false
+    }
 }
 
 private val DATE_FORMAT = DateTimeFormatter.ofPattern("d MMM yyyy, HH.mm", Locale.forLanguageTag("id-ID"))

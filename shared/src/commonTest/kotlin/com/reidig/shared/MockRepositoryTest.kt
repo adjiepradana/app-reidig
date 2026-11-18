@@ -424,6 +424,44 @@ class MockRepositoryTest {
     }
 
     @Test
+    fun goldinKycPinValidationAndPendingReviewFlow() {
+        assertEquals("PIN tidak boleh berisi angka yang sama semua", Rules.pinValidationError("111111"))
+        assertEquals("PIN tidak boleh berisi angka berurutan", Rules.pinValidationError("123456"))
+        assertEquals("PIN tidak boleh berisi angka berurutan", Rules.pinValidationError("654321"))
+        assertEquals("PIN tidak boleh memakai tanggal lahirmu", Rules.pinValidationError("110203", dob = "11/02/2003"))
+        assertEquals(null, Rules.pinValidationError("135790", dob = "11/02/2003"))
+
+        assertTrue(Rules.isValidNameOnlyLetters("Siti Aminah"))
+        assertFalse(Rules.isValidNameOnlyLetters("Ab"))
+        assertFalse(Rules.isValidNameOnlyLetters("Siti 123"))
+        assertEquals(2, KycOptions.gender.size)
+        assertEquals(7, KycOptions.agama.size)
+
+        repo.register("Indriana Putri", "indriana@gmail.com", "Password1", "indriana99", "11/02/2003")
+        assertCode("WEAK_PIN") {
+            repo.submitKycPending(pin = "110203", birthDate = "11/02/2003")
+        }
+        repo.submitKycPending(
+            pin = "135790",
+            fullName = "INDRIANA PUTRI",
+            phone = "+6281234567890",
+            birthDate = "11/02/2003",
+            nik = "3671 0151 0203 0002",
+            biometricEnabled = true,
+        )
+        assertFalse(state.user?.verified == true)
+        assertTrue(state.user?.isKycPending == true)
+        assertEquals("135790", state.pin)
+        assertTrue(state.isBiometricEnabled)
+        assertEquals("3671015102030002", state.user?.nik)
+
+        repo.approveKyc()
+        assertTrue(state.user?.verified == true)
+        assertFalse(state.user?.isKycPending == true)
+        assertTrue(state.notifications.any { it.title == "Verifikasi berhasil" })
+    }
+
+    @Test
     fun logoutClearsAccountData() {
         demo()
         repo.logout()

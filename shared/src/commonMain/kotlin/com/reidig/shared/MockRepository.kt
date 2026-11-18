@@ -287,8 +287,33 @@ class MockRepository(
         }
     }
 
-    fun submitKycPending() {
-        _state.update { it.copy(user = it.user?.copy(verified = false, isKycPending = true)) }
+    fun submitKycPending(
+        pin: String? = null,
+        fullName: String? = null,
+        phone: String? = null,
+        birthDate: String? = null,
+        nik: String? = null,
+        biometricEnabled: Boolean? = null,
+    ) {
+        if (pin != null) {
+            Rules.pinValidationError(pin, birthDate)?.let { fail("WEAK_PIN", it) }
+        }
+        _state.update { s ->
+            val current = s.user
+            val updatedUser = current?.copy(
+                name = fullName?.trim()?.takeIf { it.isNotEmpty() } ?: current.name,
+                phone = phone?.takeIf { it.isNotEmpty() } ?: current.phone,
+                birthDate = birthDate?.takeIf { it.isNotEmpty() } ?: current.birthDate,
+                nik = nik?.replace(" ", "")?.takeIf { it.isNotEmpty() } ?: current.nik,
+                verified = false,
+                isKycPending = true,
+            )
+            s.copy(
+                user = updatedUser,
+                pin = pin ?: s.pin,
+                isBiometricEnabled = biometricEnabled ?: s.isBiometricEnabled,
+            )
+        }
     }
 
     fun approveKyc() {

@@ -16,6 +16,7 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -30,19 +31,24 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -94,6 +100,181 @@ import kotlinx.coroutines.delay
 import java.time.LocalDate
 
 private const val STEPS = 5
+const val KYC_TOTAL_STEPS = 7
+
+/**
+ * Modal konfirmasi keluar e-KYC sesuai Handoff §5 & `Main.dc.html` L4150:
+ * - Centered modal (tanpa handle), warning tone, tombol Keluar · Lanjut verifikasi
+ */
+@Composable
+fun KycExitConfirmModal(
+    onConfirmExit: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    GoldinModal(
+        title = "Yakin ingin keluar dari verifikasi?",
+        message = "Data yang sudah diisi akan hilang dan kamu harus mengulang verifikasi dari awal.",
+        cancelLabel = "Keluar",
+        onCancel = onConfirmExit,
+        confirmLabel = "Lanjut verifikasi",
+        onConfirm = onContinue,
+        tone = GoldinDialogTone.WARNING,
+        icon = PrototypeIcons.AlertCircle,
+    )
+}
+
+/**
+ * Kerangka standar 7 langkah e-KYC Goldin v1.2 (`Main.dc.html` L1176–1290):
+ * - Header: tombol kembali bulat 44dp (hover neutral-200) -> membuka modal konfirmasi keluar,
+ *   judul terpusat Geist SemiBold 16sp, counter kanan Geist Mono 12sp (`step/7`)
+ * - Progress bar 7 segmen (`4dp`, gap `4dp`, animasi warna `300ms`)
+ * - Area konten scrollable selalu mulai dari atas (scroll = 0)
+ * - Footer tetap berlatar putih dengan hairline divider atas & `PairedButtons`
+ */
+@Composable
+fun KycStepScaffold(
+    step: Int,
+    title: String,
+    onExitConfirmed: () -> Unit,
+    modifier: Modifier = Modifier,
+    totalSteps: Int = KYC_TOTAL_STEPS,
+    scrollable: Boolean = true,
+    footerSurface: Color = Color.White,
+    showFooterDivider: Boolean = true,
+    footer: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var showExitModal by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Palette.Paper)
+            .statusBarsPadding()
+            .imePadding(),
+    ) {
+        // Header + 7-segment progress bar
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = GoldinSpace.Lg),
+        ) {
+            Spacer(Modifier.height(GoldinSpace.Xs))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(GoldinControl.TouchMin),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GoldinIconButton(
+                    icon = PrototypeIcons.ChevronLeft,
+                    contentDescription = "Keluar dari verifikasi",
+                    onClick = { showExitModal = true },
+                    hoverColor = Palette.Neutral200,
+                    modifier = Modifier.offset(x = (-10).dp),
+                )
+                Text(
+                    text = title,
+                    fontFamily = BodyFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    color = Palette.Ink,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                Box(
+                    modifier = Modifier.size(GoldinControl.TouchMin),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "$step/$totalSteps",
+                        fontFamily = MonoFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = Palette.InkSecondary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(GoldinSpace.Xs))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(GoldinSpace.Xxs),
+            ) {
+                for (i in 1..totalSteps) {
+                    val segColor by animateColorAsState(
+                        targetValue = if (i <= step) Palette.Primary700 else Palette.Neutral300,
+                        animationSpec = tween(300),
+                        label = "kycSeg$i",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(GoldinRadius.Full))
+                            .background(segColor),
+                    )
+                }
+            }
+        }
+
+        // Body
+        val bodyMod = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+            .padding(horizontal = GoldinSpace.Lg)
+        Column(modifier = bodyMod, content = content)
+
+        // Fixed footer
+        if (footer != null) {
+            if (showFooterDivider) {
+                Box(Modifier.fillMaxWidth().height(GoldinBorder.Hairline).background(Palette.Line))
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(footerSurface)
+                    .navigationBarsPadding()
+                    .padding(start = GoldinSpace.Lg, end = GoldinSpace.Lg, top = GoldinSpace.Md, bottom = GoldinSpace.Xl),
+                content = footer,
+            )
+        }
+    }
+
+    if (showExitModal) {
+        KycExitConfirmModal(
+            onConfirmExit = {
+                showExitModal = false
+                onExitConfirmed()
+            },
+            onContinue = { showExitModal = false },
+        )
+    }
+}
+
+@ScreenPreview
+@Composable
+private fun KycStepScaffoldPreview() = GoldinTheme {
+    KycStepScaffold(
+        step = 3,
+        title = "Data diri",
+        onExitConfirmed = {},
+        footer = {
+            PairedButtons(
+                leftText = "Sebelumnya",
+                onLeftClick = {},
+                rightText = "Selanjutnya",
+                onRightClick = {},
+            )
+        },
+    ) {
+        Spacer(Modifier.height(GoldinSpace.Xl))
+        Text("Contoh konten langkah e-KYC", style = GoldinTypography.bodyMd, color = Palette.InkSecondary)
+    }
+}
 
 @Composable
 fun KycConsentScreen(onBack: () -> Unit, onNext: () -> Unit) {

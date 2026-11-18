@@ -46,6 +46,38 @@ object Rules {
 
     fun isValidFullName(name: String) = name.trim().length >= 3 && name.trim().any { it.isLetter() }
 
+    private val LETTERS_ONLY_NAME = Regex("^[A-Za-z\\u00C0-\\u024F .'\\-]+$")
+
+    fun isValidNameOnlyLetters(value: String): Boolean {
+        val trimmed = value.trim()
+        return trimmed.length >= 3 && LETTERS_ONLY_NAME.matches(trimmed)
+    }
+
+    /**
+     * Pesan error spesifik pembuatan PIN e-KYC sesuai prototipe Goldin v1.2 (`Main.dc.html` L3482–3486):
+     * - Angka sama semua (111111)
+     * - Angka berurutan (123456 / 654321)
+     * - Kombinasi tanggal lahir (DDMMYY / YYMMDD / MMDDYY)
+     */
+    fun pinValidationError(pin: String, dob: String? = null): String? {
+        if (pin.length != 6 || !pin.all { it in '0'..'9' }) return "PIN harus terdiri dari 6 angka"
+        if (pin.all { it == pin[0] }) return "PIN tidak boleh berisi angka yang sama semua"
+        val steps = pin.zipWithNext { a, b -> b - a }
+        if (steps.all { it == 1 } || steps.all { it == -1 }) return "PIN tidak boleh berisi angka berurutan"
+        if (!dob.isNullOrBlank()) {
+            val parts = dob.split("/")
+            if (parts.size == 3) {
+                val dd = parts[0].padStart(2, '0')
+                val mm = parts[1].padStart(2, '0')
+                val yyyy = parts[2]
+                val yy = if (yyyy.length >= 4) yyyy.substring(2) else ""
+                val birthCodes = setOf(dd + mm + yy, yy + mm + dd, mm + dd + yy)
+                if (pin in birthCodes) return "PIN tidak boleh memakai tanggal lahirmu"
+            }
+        }
+        return null
+    }
+
     /** Format DD/MM/YYYY, minimal 18 tahun pada tanggal acuan. */
     fun isAdult(dob: String, todayYear: Int, todayMonth: Int, todayDay: Int): Boolean {
         val parts = dob.split("/")
@@ -88,6 +120,22 @@ object Rules {
     fun isPickupEligible(totalWeightMg: Long) = totalWeightMg >= PICKUP_MIN_WEIGHT_MG
 
     fun canSellAt(token: GoldToken, nowMs: Long) = token.status == TokenStatus.ACTIVE && nowMs - token.acquiredAtMs >= HOLDING_PERIOD_MS
+}
+
+/** Opsi dropdown e-KYC dan Alamat tersimpan sesuai `OPTS` di prototipe Goldin v1.2 (`Main.dc.html` L3269–3282). */
+object KycOptions {
+    val gender = listOf("Laki-laki", "Perempuan")
+    val agama = listOf("Islam", "Kristen", "Katolik", "Hindu", "Buddha", "Konghucu", "Kepercayaan terhadap Tuhan YME")
+    val kawin = listOf("Belum kawin", "Kawin", "Cerai hidup", "Cerai mati")
+    val prov = listOf("Banten", "DKI Jakarta", "Jawa Barat", "Jawa Tengah", "Jawa Timur")
+    val kota = listOf("Kota Tangerang", "Kabupaten Tangerang", "Kota Tangerang Selatan", "Kota Serang")
+    val kec = listOf("Karawaci", "Cibodas", "Cipondoh", "Tangerang")
+    val kel = listOf("Bugel", "Nusa Jaya", "Sumur Pacing", "Cimone")
+    val pendidikan = listOf("SD", "SMP", "SMA/SMK", "Diploma (D1–D3)", "Sarjana (S1)", "Magister (S2)", "Doktor (S3)")
+    val pekerjaan = listOf("Karyawan swasta", "PNS/TNI/Polri", "Wiraswasta", "Profesional", "Pelajar/mahasiswa", "Ibu rumah tangga", "Lainnya")
+    val penghasilan = listOf("Di bawah Rp5 juta", "Rp5–10 juta", "Rp10–25 juta", "Rp25–50 juta", "Di atas Rp50 juta")
+    val sumber = listOf("Gaji", "Hasil usaha", "Hasil investasi", "Warisan atau hibah", "Lainnya")
+    val tujuan = listOf("Investasi", "Tabungan jangka panjang", "Dana darurat", "Lainnya")
 }
 
 fun rupiah(value: Long): String {
