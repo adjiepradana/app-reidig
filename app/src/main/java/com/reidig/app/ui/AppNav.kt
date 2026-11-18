@@ -228,6 +228,11 @@ fun ReidigApp(repo: MockRepository) {
         )
         nav.navigate("kyc/consent")
     }
+    fun exitKycFlow() {
+        if (!nav.popBackStack("kyc/consent", inclusive = true)) {
+            nav.popBackStack("home", inclusive = false)
+        }
+    }
     fun requireVerified(next: String) {
         val user = state.user
         when {
@@ -366,7 +371,7 @@ fun ReidigApp(repo: MockRepository) {
                         env = env,
                         onBack = { nav.popBackStack() },
                         onPinSaved = {
-                            autoOpenBiometricOnPin = true
+                            autoOpenBiometricOnPin = false
                             pinToastMessage = "PIN berhasil diubah"
                             nav.popBackStack("login/pin", inclusive = false)
                         },
@@ -461,7 +466,7 @@ fun ReidigApp(repo: MockRepository) {
                     KycPhoneScreen(
                         kyc = kyc,
                         onBack = { nav.popBackStack() },
-                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onExit = ::exitKycFlow,
                         onNext = { nav.navigate("kyc/otp") },
                     )
                 }
@@ -469,7 +474,7 @@ fun ReidigApp(repo: MockRepository) {
                     KycPhoneOtpScreen(
                         kyc = kyc,
                         onBack = { nav.popBackStack() },
-                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onExit = ::exitKycFlow,
                         onVerified = {
                             nav.navigate("kyc/ktp") { popUpTo("kyc/phone") }
                         },
@@ -478,7 +483,7 @@ fun ReidigApp(repo: MockRepository) {
                 composable("kyc/ktp") {
                     KycKtpIntroScreen(
                         onBack = { nav.popBackStack() },
-                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onExit = ::exitKycFlow,
                         onNext = { nav.navigate("kyc/cam") },
                     )
                 }
@@ -495,7 +500,7 @@ fun ReidigApp(repo: MockRepository) {
                         kyc = kyc,
                         onBack = { nav.popBackStack("kyc/ktp", inclusive = false) },
                         onRetakeKtp = { nav.popBackStack() },
-                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onExit = ::exitKycFlow,
                         onNext = { nav.navigate("kyc/addr") },
                     )
                 }
@@ -503,7 +508,7 @@ fun ReidigApp(repo: MockRepository) {
                     KycAddressScreen(
                         kyc = kyc,
                         onBack = { nav.popBackStack() },
-                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onExit = ::exitKycFlow,
                         onNext = { nav.navigate("kyc/info") },
                     )
                 }
@@ -511,14 +516,14 @@ fun ReidigApp(repo: MockRepository) {
                     KycInfoScreen(
                         kyc = kyc,
                         onBack = { nav.popBackStack() },
-                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onExit = ::exitKycFlow,
                         onNext = { nav.navigate("kyc/face") },
                     )
                 }
                 composable("kyc/face") {
                     KycFaceIntroScreen(
                         onBack = { nav.popBackStack() },
-                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onExit = ::exitKycFlow,
                         onStart = { nav.navigate("kyc/face-cam") },
                     )
                 }
@@ -533,7 +538,7 @@ fun ReidigApp(repo: MockRepository) {
                         env = env,
                         kyc = kyc,
                         onBack = { nav.popBackStack() },
-                        onExit = { nav.popBackStack("home", inclusive = false) },
+                        onExit = ::exitKycFlow,
                         onDone = { nav.navigate("kyc/done") { popUpTo("home") } },
                     )
                 }

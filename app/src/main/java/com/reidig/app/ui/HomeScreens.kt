@@ -481,7 +481,7 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = if (simIsRp) "Nominal" else "Berat",
+                            text = if (simIsRp) "Nominal" else "Berat emas",
                             fontFamily = BodyFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
@@ -581,11 +581,10 @@ fun HomeScreen(
                             trailingIcon = {
                                 Text(
                                     text = "gr",
-                                    fontFamily = MonoFontFamily,
-                                    fontWeight = FontWeight.Medium,
+                                    fontFamily = BodyFontFamily,
                                     fontSize = 14.sp,
+                                    lineHeight = 20.sp,
                                     color = Palette.InkSecondary,
-                                    modifier = Modifier.padding(end = GoldinSpace.Md),
                                 )
                             },
                         )

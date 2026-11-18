@@ -1013,6 +1013,16 @@ fun LoginPinScreen(
         )
     }
 
+    LaunchedEffect(toastMessage) {
+        if (toastMessage != null) {
+            pin = ""
+            errorText = null
+            if (activeModal is PinModalType.AccountLock || activeModal is PinModalType.PinLock) {
+                activeModal = null
+            }
+        }
+    }
+
     val scope = rememberCoroutineScope()
     val shakeOffset = remember { Animatable(0f) }
 

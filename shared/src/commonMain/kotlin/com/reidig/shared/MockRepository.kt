@@ -996,11 +996,13 @@ class MockRepository(
         const val DEMO_PIN = "147258"
         const val DEMO_EMAIL_OTP = "654321"
         const val DEMO_PHONE_OTP = "123456"
-        private const val BUYBACK_PER_GRAM = 2_310_000L
-        private const val ASK_PER_GRAM = 2_287_500L
+        private const val SKU_BUYBACK_PER_GRAM = 2_310_000L
+        private const val ASK_PER_GRAM = 2_315_000L
+        private const val BID_PER_GRAM = 2_257_500L
+        private const val BASE_ASK_PER_GRAM = 2_287_500L
 
         private fun sku(code: String, product: String, weightMg: Long, buyPrice: Long, stock: Int) =
-            Sku(code, product, weightMg, buyPrice, BUYBACK_PER_GRAM * weightMg / 1000, stock)
+            Sku(code, product, weightMg, buyPrice, SKU_BUYBACK_PER_GRAM * weightMg / 1000, stock)
 
         private fun initialState() = AppState(
             skus = listOf(
@@ -1017,9 +1019,10 @@ class MockRepository(
                 sku("LMRE-500G", "LM Raja Emas", 500_000, 1_228_320_000, 2),
                 sku("LMRE-1000G", "LM Raja Emas", 1_000_000, 2_456_600_000, 1),
             ),
-            buybackPerGram = BUYBACK_PER_GRAM,
+            buybackPerGram = BID_PER_GRAM,
             askPricePerGram = ASK_PER_GRAM,
-            priceUpdatedAtLabel = "Diperbarui 12.30 WIB",
+            priceBaseAskPerGram = BASE_ASK_PER_GRAM,
+            priceUpdatedAtLabel = "12.30 WIB",
         )
     }
 }
