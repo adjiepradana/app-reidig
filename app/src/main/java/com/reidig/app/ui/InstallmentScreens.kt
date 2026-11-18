@@ -201,8 +201,11 @@ fun DownPaymentScreen(
             val detail = if (option == PaymentMethod.WALLET) "Tersedia ${rupiah(state.walletBalance)}" else "Konfirmasi otomatis"
             val logoRes = when (option) {
                 PaymentMethod.QRIS -> R.drawable.logo_qris
-                PaymentMethod.VIRTUAL_ACCOUNT -> R.drawable.logo_bca
-                PaymentMethod.WALLET -> null
+                PaymentMethod.VIRTUAL_ACCOUNT, PaymentMethod.VA_BCA -> R.drawable.logo_bca
+                PaymentMethod.VA_BRI -> R.drawable.logo_bri
+                PaymentMethod.VA_MANDIRI -> R.drawable.logo_mandiri
+                PaymentMethod.VA_BNI -> R.drawable.logo_bni
+                else -> null
             }
             PaymentOption(option.label, detail, option == method, logoRes = logoRes) { method = option }
             Spacer(Modifier.height(8.dp))

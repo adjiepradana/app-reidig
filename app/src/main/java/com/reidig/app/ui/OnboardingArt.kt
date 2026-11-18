@@ -1,7 +1,9 @@
 package com.reidig.app.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -9,6 +11,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +31,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +44,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.ContentScale
@@ -52,9 +59,9 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Kumpulan ikon SVG Tabler & kustom yang sama persis dengan Goldin Prototype v1.html. */
+/** Kumpulan ikon SVG Tabler (v3.19.0, stroke 1.75dp) & kustom yang sama persis dengan Goldin v1.2 & Design System v2. */
 object PrototypeIcons {
-    private fun tablerVector(name: String, paths: List<String>, strokeWidth: Float = 1.75f): ImageVector {
+    private fun tablerVector(name: String, paths: List<String>, strokeWidth: Float = GoldinControl.IconStroke): ImageVector {
         val builder = ImageVector.Builder(
             name = name,
             defaultWidth = 24.dp,
@@ -72,6 +79,22 @@ object PrototypeIcons {
                 strokeLineJoin = StrokeJoin.Round,
             )
         }
+        return builder.build()
+    }
+
+    private fun tablerFilledVector(name: String, path: String): ImageVector {
+        val builder = ImageVector.Builder(
+            name = name,
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        )
+        builder.addPath(
+            pathData = PathParser().parsePathString(path).toNodes(),
+            fill = SolidColor(Color.Black),
+            stroke = null,
+        )
         return builder.build()
     }
 
@@ -233,8 +256,8 @@ object PrototypeIcons {
         tablerVector(
             "ShieldCheck",
             listOf(
-                "M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06",
-                "M15 19l2 2l4 -4",
+                "M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3",
+                "M9 12l2 2l4 -4",
             ),
         )
     }
@@ -304,15 +327,19 @@ object PrototypeIcons {
     }
 
     val ChevronLeft: ImageVector by lazy {
-        tablerVector("ChevronLeft", listOf("M15 6l-6 6l6 6"), strokeWidth = 2f)
+        tablerVector("ChevronLeft", listOf("M15 6l-6 6l6 6"))
     }
 
     val ChevronRight: ImageVector by lazy {
-        tablerVector("ChevronRight", listOf("M9 6l6 6l-6 6"), strokeWidth = 1.75f)
+        tablerVector("ChevronRight", listOf("M9 6l6 6l-6 6"))
+    }
+
+    val ChevronDown: ImageVector by lazy {
+        tablerVector("ChevronDown", listOf("M6 9l6 6l6 -6"))
     }
 
     val Check: ImageVector by lazy {
-        tablerVector("Check", listOf("M5 12l5 5l10 -10"), strokeWidth = 2.25f)
+        tablerVector("Check", listOf("M5 12l5 5l10 -10"))
     }
 
     val ArrowsUpDown: ImageVector by lazy {
@@ -335,6 +362,358 @@ object PrototypeIcons {
                 "M8 13h6",
                 "M18 4a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-5l-5 3v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12z",
             ),
+        )
+    }
+
+    val PieChart: ImageVector by lazy {
+        tablerVector(
+            "PieChart",
+            listOf(
+                "M10 3.2a9 9 0 1 0 10.8 10.8a1 1 0 0 0 -1 -1h-6.8a2 2 0 0 1 -2 -2v-7a.9 .9 0 0 0 -1 -.8",
+                "M15 3.5a9 9 0 0 1 5.5 5.5h-4.5a1 1 0 0 1 -1 -1v-4.5",
+            ),
+        )
+    }
+
+    val InfoCircle: ImageVector by lazy {
+        tablerVector(
+            "InfoCircle",
+            listOf(
+                "M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0",
+                "M12 9h.01",
+                "M11 12h1v4h1",
+            ),
+        )
+    }
+
+    val AlertCircle: ImageVector by lazy {
+        tablerVector(
+            "AlertCircle",
+            listOf(
+                "M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0",
+                "M12 8v4",
+                "M12 16h.01",
+            ),
+        )
+    }
+
+    val XClose: ImageVector by lazy {
+        tablerVector("XClose", listOf("M18 6l-12 12", "M6 6l12 12"))
+    }
+
+    val BuildingBank: ImageVector by lazy {
+        tablerVector(
+            "BuildingBank",
+            listOf(
+                "M3 21l18 0",
+                "M3 10l18 0",
+                "M5 6l7 -3l7 3",
+                "M4 10l0 11",
+                "M20 10l0 11",
+                "M8 14l0 3",
+                "M12 14l0 3",
+                "M16 14l0 3",
+            ),
+        )
+    }
+
+    val Trash: ImageVector by lazy {
+        tablerVector(
+            "Trash",
+            listOf(
+                "M4 7l16 0",
+                "M10 11l0 6",
+                "M14 11l0 6",
+                "M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12",
+                "M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3",
+            ),
+        )
+    }
+
+    val Copy: ImageVector by lazy {
+        tablerVector(
+            "Copy",
+            listOf(
+                "M7 7m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z",
+                "M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1",
+            ),
+        )
+    }
+
+    val Diamond: ImageVector by lazy {
+        tablerVector(
+            "Diamond",
+            listOf(
+                "M6 5h12l3 5l-9 11l-9 -11z",
+                "M10 12l-2 -2.2l.6 -1",
+                "M9 5l3 5l3 -5",
+            ),
+            strokeWidth = 1.75f,
+        )
+    }
+
+    val PackageBox: ImageVector by lazy {
+        tablerVector(
+            "PackageBox",
+            listOf(
+                "M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5",
+                "M12 12l8 -4.5",
+                "M12 12l0 9",
+                "M12 12l-8 -4.5",
+            ),
+            strokeWidth = 1.75f,
+        )
+    }
+
+    val Backspace: ImageVector by lazy {
+        tablerVector(
+            "Backspace",
+            listOf(
+                "M20 6a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-11l-5 -5a1.5 1.5 0 0 1 0 -2l5 -5z",
+                "M12 10l4 4",
+                "M16 10l-4 4",
+            ),
+            strokeWidth = 1.75f,
+        )
+    }
+
+    val Fingerprint: ImageVector by lazy {
+        tablerVector(
+            "Fingerprint",
+            listOf(
+                "M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3",
+                "M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6",
+                "M12 11v2a14 14 0 0 0 2.5 8",
+                "M8 15a18 18 0 0 0 1.8 6",
+                "M4.9 19a22 22 0 0 1 -.9 -7v-1a8 8 0 0 1 12 -6.95",
+            ),
+        )
+    }
+
+    val Loader2: ImageVector by lazy {
+        tablerVector("Loader2", listOf("M12 3a9 9 0 1 0 9 9"), strokeWidth = 2.25f)
+    }
+
+    val CircleCheckFilled: ImageVector by lazy {
+        tablerFilledVector(
+            "CircleCheckFilled",
+            "M17 3.34a10 10 0 1 1 -14.995 8.984l-.005 -.324l.005 -.324a10 10 0 0 1 14.995 -8.336zm-1.293 5.953a1 1 0 0 0 -1.32 -.083l-.094 .083l-3.293 3.292l-1.293 -1.292l-.094 -.083a1 1 0 0 0 -1.403 1.403l.083 .094l2 2l.094 .083a1 1 0 0 0 1.226 0l.094 -.083l4 -4l.083 -.094a1 1 0 0 0 -.083 -1.32z",
+        )
+    }
+
+    val CircleXFilled: ImageVector by lazy {
+        tablerFilledVector(
+            "CircleXFilled",
+            "M17 3.34a10 10 0 1 1 -14.995 8.984l-.005 -.324l.005 -.324a10 10 0 0 1 14.995 -8.336zm-6.489 5.8a1 1 0 0 0 -1.218 1.567l1.292 1.293l-1.292 1.293l-.083 .094a1 1 0 0 0 1.497 1.32l1.293 -1.292l1.293 1.292l.094 .083a1 1 0 0 0 1.32 -1.497l-1.292 -1.293l1.292 -1.293l.083 -.094a1 1 0 0 0 -1.497 -1.32l-1.293 1.292l-1.293 -1.292l-.094 -.083z",
+        )
+    }
+
+    val Clock: ImageVector by lazy {
+        tablerVector(
+            "Clock",
+            listOf(
+                "M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0",
+                "M12 7v5l3 3",
+            ),
+        )
+    }
+
+    val ArrowRight: ImageVector by lazy {
+        tablerVector(
+            "ArrowRight",
+            listOf(
+                "M5 12l14 0",
+                "M13 18l6 -6",
+                "M13 6l6 6",
+            ),
+        )
+    }
+
+    val Plus: ImageVector by lazy {
+        tablerVector(
+            "Plus",
+            listOf(
+                "M12 5l0 14",
+                "M5 12l14 0",
+            ),
+        )
+    }
+
+    val Repeat: ImageVector by lazy {
+        tablerVector(
+            "Repeat",
+            listOf(
+                "M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3",
+                "M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3",
+            ),
+        )
+    }
+
+    val FilterSliders: ImageVector by lazy {
+        tablerVector(
+            "FilterSliders",
+            listOf(
+                "M12 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0",
+                "M4 6l8 0",
+                "M16 6l4 0",
+                "M6 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0",
+                "M4 12l2 0",
+                "M10 12l10 0",
+                "M15 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0",
+                "M4 18l11 0",
+                "M19 18l1 0",
+            ),
+        )
+    }
+
+    val Download: ImageVector by lazy {
+        tablerVector(
+            "Download",
+            listOf(
+                "M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2",
+                "M7 11l5 5l5 -5",
+                "M12 4l0 12",
+            ),
+        )
+    }
+
+    val Receipt: ImageVector by lazy {
+        tablerVector(
+            "Receipt",
+            listOf(
+                "M5 21v-16a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v16l-3 -2l-2 2l-2 -2l-2 2l-2 -2l-3 2",
+                "M9 7h6",
+                "M9 11h6",
+                "M13 15h2",
+            ),
+        )
+    }
+
+    val ReceiptMoney: ImageVector by lazy {
+        tablerVector(
+            "ReceiptMoney",
+            listOf(
+                "M5 21v-16a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v16l-3 -2l-2 2l-2 -2l-2 2l-2 -2l-3 2",
+                "M14 8h-2.5a1.5 1.5 0 0 0 0 3h1a1.5 1.5 0 0 1 0 3h-2.5m2 0v1.5m0 -9v1.5",
+            ),
+        )
+    }
+
+    val MapPin: ImageVector by lazy {
+        tablerVector(
+            "MapPin",
+            listOf(
+                "M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0",
+                "M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z",
+            ),
+        )
+    }
+
+    val Search: ImageVector by lazy {
+        tablerVector(
+            "Search",
+            listOf(
+                "M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0",
+                "M21 21l-6 -6",
+            ),
+        )
+    }
+
+    val BuildingStore: ImageVector by lazy {
+        tablerVector(
+            "BuildingStore",
+            listOf(
+                "M3 21l18 0",
+                "M3 7v1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1h-18l2 -4h14l2 4",
+                "M5 21l0 -10.15",
+                "M19 21l0 -10.15",
+                "M9 21v-4a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v4",
+            ),
+        )
+    }
+
+    val TruckDelivery: ImageVector by lazy {
+        tablerVector(
+            "TruckDelivery",
+            listOf(
+                "M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0",
+                "M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0",
+                "M5 17h-2v-4m-1 -8h11v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5",
+                "M3 9l4 0",
+            ),
+        )
+    }
+
+    val Logout: ImageVector by lazy {
+        tablerVector(
+            "Logout",
+            listOf(
+                "M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2",
+                "M9 12h12l-3 -3",
+                "M18 15l3 -3",
+            ),
+        )
+    }
+
+    val AtSign: ImageVector by lazy {
+        tablerVector(
+            "AtSign",
+            listOf(
+                "M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0",
+                "M16 12v1.5a2.5 2.5 0 0 0 5 0v-1.5a9 9 0 1 0 -5.5 8.28",
+            ),
+        )
+    }
+
+    val Printer: ImageVector by lazy {
+        tablerVector(
+            "Printer",
+            listOf(
+                "M17 17h2a2 2 0 0 0 2 -2v-4a2 2 0 0 0 -2 -2h-14a2 2 0 0 0 -2 2v4a2 2 0 0 0 2 2h2",
+                "M17 9v-4a2 2 0 0 0 -2 -2h-6a2 2 0 0 0 -2 2v4",
+                "M7 13m0 2a2 2 0 0 1 2 -2h6a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-6a2 2 0 0 1 -2 -2z",
+            ),
+        )
+    }
+
+    val Coin: ImageVector by lazy {
+        tablerVector(
+            "Coin",
+            listOf(
+                "M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0",
+                "M14.8 9a2 2 0 0 0 -1.8 -1h-2a2 2 0 1 0 0 4h2a2 2 0 1 1 0 4h-2a2 2 0 0 1 -1.8 -1",
+                "M12 7v10",
+            ),
+        )
+    }
+
+    val ShieldLock: ImageVector by lazy {
+        tablerVector(
+            "ShieldLock",
+            listOf(
+                "M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3",
+                "M12 11m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+                "M12 12l0 2.5",
+            ),
+        )
+    }
+
+    val LockCheck: ImageVector by lazy {
+        tablerVector(
+            "LockCheck",
+            listOf(
+                "M11.5 21h-4.5a2 2 0 0 1 -2 -2v-6a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v.5",
+                "M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0",
+                "M8 11v-4a4 4 0 1 1 8 0v4",
+                "M15 19l2 2l4 -4",
+            ),
+        )
+    }
+
+    val CircleOutline: ImageVector by lazy {
+        tablerVector(
+            "CircleOutline",
+            listOf("M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"),
         )
     }
 }
@@ -409,16 +788,45 @@ private inline fun DrawScope.rotateAround(degrees: Float, pivot: Offset, block: 
 /** Tombol masuk/daftar dengan akun Google sesuai gaya outlined button prototipe. */
 @Composable
 fun GoogleButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = tween(120),
+        label = "googleScale",
+    )
+    val containerColor by animateColorAsState(
+        targetValue = when {
+            isPressed -> Palette.Primary100
+            isHovered -> Palette.Primary50
+            else -> Color.Transparent
+        },
+        animationSpec = tween(200),
+        label = "googleBg",
+    )
+
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(48.dp),
-        shape = RoundedCornerShape(50),
-        border = BorderStroke(1.5.dp, Palette.Primary),
-        colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Transparent, contentColor = Palette.Primary),
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        shape = RoundedCornerShape(999.dp),
+        border = BorderStroke(1.dp, Palette.Primary700),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = containerColor,
+            contentColor = Palette.Primary700,
+        ),
     ) {
         Image(painterResource(R.drawable.ic_google), null, Modifier.size(20.dp))
         Spacer(Modifier.width(10.dp))
-        Text(text, fontFamily = BodyFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Palette.Primary)
+        Text(text, fontFamily = BodyFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Palette.Primary700)
     }
 }
 

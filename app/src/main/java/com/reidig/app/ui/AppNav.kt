@@ -1,8 +1,15 @@
 package com.reidig.app.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,13 +29,16 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -56,7 +66,7 @@ private data class Tab(val route: String, val label: String, val icon: () -> Ima
 
 private val TABS = listOf(
     Tab("home", "Beranda") { PrototypeIcons.Home },
-    Tab("wallet", "Dompet") { PrototypeIcons.Wallet },
+    Tab("wallet", "Portofolio") { PrototypeIcons.PieChart },
     Tab("catalog", "Transaksi") { PrototypeIcons.ArrowsExchange },
     Tab("print-tab", "Cetak") { PrototypeIcons.GoldIngots },
     Tab("account", "Profil") { PrototypeIcons.User },
@@ -69,55 +79,119 @@ private fun activeTab(route: String?): String? = when (route) {
     else -> route?.takeIf { current -> TABS.any { it.route == current } }
 }
 
-/** Navigasi bawah sesuai prototipe Goldin v1, dengan tombol Transaksi melayang di tengah. */
+/**
+ * Navigasi bawah 5 tab sesuai prototipe Goldin v1.2 (`Main.dc.html` L2778–2801):
+ * - Beranda · Portofolio (pie-chart) · Transaksi (tombol melayang 56dp di tengah) · Cetak · Profil
+ * - Permukaan putih `radius-2xl` atas, shadow overlay, animasi hover/tekan & ring halo aktif 200ms
+ */
 @Composable
 private fun ReidigBottomBar(active: String, onSelect: (String) -> Unit) {
     Box(Modifier.fillMaxWidth().background(Palette.Paper)) {
         Row(
-            Modifier.fillMaxWidth().padding(top = 24.dp)
-                .shadow(14.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 24.dp)
+                .shadow(16.dp, RoundedCornerShape(topStart = GoldinRadius.Xxl, topEnd = GoldinRadius.Xxl))
+                .clip(RoundedCornerShape(topStart = GoldinRadius.Xxl, topEnd = GoldinRadius.Xxl))
                 .background(Color.White)
                 .navigationBarsPadding()
-                .padding(top = 8.dp, bottom = 10.dp, start = 12.dp, end = 12.dp),
+                .padding(top = GoldinSpace.Xs, bottom = 10.dp, start = GoldinSpace.Xs, end = GoldinSpace.Xs),
             verticalAlignment = Alignment.Bottom,
         ) {
             TABS.forEach { tab ->
                 val selected = tab.route == active
-                val tint = if (selected) Palette.Primary else Palette.InkSoft
+                val interactionSource = remember { MutableInteractionSource() }
+                val isHovered by interactionSource.collectIsHoveredAsState()
+                val isPressed by interactionSource.collectIsPressedAsState()
+                val tint by animateColorAsState(
+                    targetValue = when {
+                        selected -> Palette.Primary700
+                        isHovered || isPressed -> Palette.Primary600
+                        else -> Palette.InkSoft
+                    },
+                    animationSpec = tween(GoldinMotion.DurationColor),
+                    label = "tabTint",
+                )
+                val tabScale by animateFloatAsState(
+                    targetValue = if (isPressed) 0.94f else 1f,
+                    animationSpec = tween(GoldinMotion.DurationPress),
+                    label = "tabScale",
+                )
                 Column(
-                    Modifier.weight(1f).clickable(role = Role.Tab) { onSelect(tab.route) }.padding(vertical = 4.dp),
+                    Modifier
+                        .weight(1f)
+                        .height(56.dp)
+                        .graphicsLayer { scaleX = tabScale; scaleY = tabScale }
+                        .clip(RoundedCornerShape(GoldinRadius.Lg))
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            role = Role.Tab,
+                        ) { onSelect(tab.route) }
+                        .padding(horizontal = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
                 ) {
                     if (tab.route == "catalog") {
                         Spacer(Modifier.height(26.dp))
                     } else {
-                        Icon(tab.icon(), null, tint = tint, modifier = Modifier.size(24.dp))
+                        Icon(tab.icon(), null, tint = tint, modifier = Modifier.size(GoldinControl.IconLg))
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(GoldinSpace.Xxs))
                     Text(
                         tab.label,
                         fontFamily = BodyFontFamily,
                         color = tint,
                         fontSize = 12.sp,
+                        lineHeight = 18.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
                     )
                 }
             }
         }
         val center = TABS.first { it.route == "catalog" }
         val centerActive = active == "catalog"
+        val centerInteraction = remember { MutableInteractionSource() }
+        val centerHovered by centerInteraction.collectIsHoveredAsState()
+        val centerPressed by centerInteraction.collectIsPressedAsState()
+        val centerScale by animateFloatAsState(
+            targetValue = if (centerPressed) 0.94f else 1f,
+            animationSpec = tween(GoldinMotion.DurationPress),
+            label = "centerTabScale",
+        )
+        val centerBg by animateColorAsState(
+            targetValue = when {
+                centerPressed -> Palette.Primary800
+                centerHovered -> Palette.Primary600
+                else -> Palette.Primary700
+            },
+            animationSpec = tween(GoldinMotion.DurationColor),
+            label = "centerTabBg",
+        )
+        val haloWidth by animateDpAsState(
+            targetValue = if (centerActive) 4.dp else 0.dp,
+            animationSpec = tween(GoldinMotion.DurationHover),
+            label = "centerTabHalo",
+        )
         Box(
-            Modifier.align(Alignment.TopCenter)
+            Modifier
+                .align(Alignment.TopCenter)
                 .size(56.dp)
+                .graphicsLayer { scaleX = centerScale; scaleY = centerScale }
                 .then(
-                    if (centerActive) Modifier.border(4.dp, Palette.Primary200, CircleShape)
+                    if (haloWidth > 0.dp) Modifier.border(haloWidth, Palette.Primary200, CircleShape)
                     else Modifier
                 )
-                .shadow(8.dp, CircleShape, ambientColor = Palette.Primary, spotColor = Palette.Primary)
+                .shadow(10.dp, CircleShape, ambientColor = Palette.Primary700, spotColor = Palette.Primary700)
                 .clip(CircleShape)
-                .background(Palette.Primary)
-                .clickable(role = Role.Tab, onClickLabel = center.label) { onSelect(center.route) },
+                .background(centerBg)
+                .clickable(
+                    interactionSource = centerInteraction,
+                    indication = null,
+                    role = Role.Tab,
+                    onClickLabel = center.label,
+                ) { onSelect(center.route) },
             contentAlignment = Alignment.Center,
         ) {
             Icon(center.icon(), center.label, tint = Palette.Primary50, modifier = Modifier.size(28.dp))
@@ -138,6 +212,9 @@ fun ReidigApp(repo: MockRepository) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val state by repo.state.collectAsStateWithLifecycle()
+    var pinToastMessage by remember { mutableStateOf<String?>(null) }
+    var authToastMessage by remember { mutableStateOf<String?>(null) }
+    var autoOpenBiometricOnPin by remember { mutableStateOf(false) }
 
     fun enterMain() = nav.navigate("home") { popUpTo(0) { inclusive = true } }
     fun requireVerified(next: String) {
@@ -156,37 +233,180 @@ fun ReidigApp(repo: MockRepository) {
                 }
                 composable("login") {
                     LoginScreen(
-                        env,
+                        env = env,
                         onBack = { nav.popBackStack() },
-                        onLoggedIn = ::enterMain,
+                        onLoggedIn = { nav.navigate("login/pin") },
                         onRegister = { nav.navigate("register/email") },
-                        onForgot = { nav.navigate("forgot") },
-                        onGoogle = { nav.navigate("google") },
+                        onForgot = { nav.navigate("forgot/false") },
+                        onGoogle = { nav.navigate("google/login") },
+                        toastMessage = authToastMessage,
+                        onToastDismissed = { authToastMessage = null },
                     )
                 }
-                composable("forgot") { ForgotPasswordScreen { nav.popBackStack() } }
+                composable("login/pin") {
+                    val appState by repo.state.collectAsStateWithLifecycle()
+                    LoginPinScreen(
+                        env = env,
+                        isFirstTime = appState.isFirstTimeLogin,
+                        autoOpenBiometric = autoOpenBiometricOnPin,
+                        toastMessage = pinToastMessage,
+                        onToastDismissed = { pinToastMessage = null },
+                        onBack = { nav.popBackStack() },
+                        onPinSuccess = {
+                            autoOpenBiometricOnPin = false
+                            enterMain()
+                        },
+                        onForgotPin = { nav.navigate("forgot/pin/password") },
+                    )
+                }
+                composable(
+                    "forgot/{fromPin}",
+                    arguments = listOf(navArgument("fromPin") { type = NavType.BoolType; defaultValue = false }),
+                ) { entry ->
+                    val fromPin = entry.arguments?.getBoolean("fromPin") ?: false
+                    ForgotPasswordEmailScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onCodeSent = { email -> nav.navigate("forgot/otp/$email/$fromPin") },
+                    )
+                }
+                composable(
+                    "forgot/otp/{email}/{fromPin}",
+                    arguments = listOf(
+                        navArgument("email") { type = NavType.StringType },
+                        navArgument("fromPin") { type = NavType.BoolType; defaultValue = false },
+                    ),
+                ) { entry ->
+                    val email = entry.arguments?.getString("email") ?: MockRepository.GOLDIN_DEMO_EMAIL
+                    val fromPin = entry.arguments?.getBoolean("fromPin") ?: false
+                    OtpScreen(
+                        title = "Verifikasi OTP",
+                        step = null,
+                        sentVia = "Masukkan kode verifikasi yang dikirimkan melalui email",
+                        target = email,
+                        demoCode = DEMO_EMAIL_OTP,
+                        onBack = { nav.popBackStack() },
+                    ) {
+                        nav.navigate("forgot/new/$email/$fromPin") {
+                            popUpTo("forgot/otp/{email}/{fromPin}") { inclusive = true }
+                        }
+                    }
+                }
+                composable(
+                    "forgot/new/{email}/{fromPin}",
+                    arguments = listOf(
+                        navArgument("email") { type = NavType.StringType },
+                        navArgument("fromPin") { type = NavType.BoolType; defaultValue = false },
+                    ),
+                ) { entry ->
+                    val email = entry.arguments?.getString("email") ?: MockRepository.GOLDIN_DEMO_EMAIL
+                    val fromPin = entry.arguments?.getBoolean("fromPin") ?: false
+                    ForgotPasswordNewScreen(
+                        env = env,
+                        email = email,
+                        onBack = { nav.popBackStack() },
+                        onSaved = {
+                            authToastMessage = "Kata sandi berhasil diubah"
+                            if (fromPin) {
+                                nav.popBackStack("forgot/pin/password", inclusive = false)
+                            } else {
+                                nav.popBackStack("login", inclusive = false)
+                            }
+                        },
+                    )
+                }
+                composable("forgot/pin/password") {
+                    ForgotPinPasswordScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onForgotPassword = { nav.navigate("forgot/true") },
+                        onVerified = { email -> nav.navigate("forgot/pin/otp/$email") },
+                        toastMessage = authToastMessage,
+                        onToastDismissed = { authToastMessage = null },
+                    )
+                }
+                composable("forgot/pin/otp/{email}") { backStackEntry ->
+                    val email = backStackEntry.arguments?.getString("email") ?: (repo.state.value.user?.email ?: "reiuser@gmail.com")
+                    ForgotPinOtpScreen(
+                        email = email,
+                        onBack = { nav.popBackStack() },
+                        onVerified = {
+                            nav.navigate("forgot/pin/new") {
+                                popUpTo("forgot/pin/password") { inclusive = true }
+                            }
+                        },
+                    )
+                }
+                composable("forgot/pin/new") {
+                    ForgotPinNewScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onPinSaved = {
+                            autoOpenBiometricOnPin = true
+                            pinToastMessage = "PIN berhasil diubah"
+                            nav.popBackStack("login/pin", inclusive = false)
+                        },
+                    )
+                }
                 composable("register/email") {
                     RegisterEmailScreen(
-                        signup,
+                        signup = signup,
                         onBack = { nav.popBackStack() },
                         onSent = { nav.navigate("register/otp") },
-                        onGoogle = { nav.navigate("google") },
+                        onGoogle = { nav.navigate("google/reg") },
+                        onLogin = {
+                            nav.navigate("login") {
+                                popUpTo("welcome") { inclusive = false }
+                            }
+                        },
                     )
                 }
-                composable("google") {
+                composable(
+                    "google/{mode}",
+                    arguments = listOf(navArgument("mode") { type = NavType.StringType; defaultValue = "login" }),
+                ) { entry ->
+                    val mode = entry.arguments?.getString("mode") ?: "login"
                     GoogleAccountScreen(
                         onBack = { nav.popBackStack() },
-                        onSelected = {
-                            repo.loginWithGoogle()
-                            enterMain()
+                        onSelected = { email, name ->
+                            if (mode == "reg") {
+                                signup.reset()
+                                signup.email = email
+                                signup.name = name
+                                signup.viaGoogle = true
+                            } else {
+                                repo.loginWithGoogle()
+                            }
+                            nav.navigate("google/loading/$mode") {
+                                popUpTo("google/{mode}") { inclusive = true }
+                            }
+                        },
+                    )
+                }
+                composable(
+                    "google/loading/{mode}",
+                    arguments = listOf(navArgument("mode") { type = NavType.StringType; defaultValue = "login" }),
+                ) { entry ->
+                    val mode = entry.arguments?.getString("mode") ?: "login"
+                    GoogleReturnLoadingScreen(
+                        onFinished = {
+                            if (mode == "reg") {
+                                nav.navigate("register/profile") {
+                                    popUpTo("google/loading/{mode}") { inclusive = true }
+                                }
+                            } else {
+                                nav.navigate("login/pin") {
+                                    popUpTo("google/loading/{mode}") { inclusive = true }
+                                }
+                            }
                         },
                     )
                 }
                 composable("register/otp") {
                     OtpScreen(
-                        title = "Verifikasi email",
+                        title = "Verifikasi OTP",
                         step = 2 to 3,
-                        sentVia = "Masukkan 6 digit kode yang kami kirim ke",
+                        sentVia = "Masukkan kode verifikasi yang dikirimkan melalui email",
                         target = signup.email,
                         demoCode = DEMO_EMAIL_OTP,
                         stepLabels = listOf("Buat akun", "Verifikasi", "Data diri"),

@@ -19,8 +19,10 @@ class MockRepositoryTest {
 
     @Test
     fun formatting() {
-        assertEquals("Rp 2.513.500", rupiah(2_513_500))
-        assertEquals("Rp 305.000", rupiah(305_000))
+        assertEquals("Rp2.513.500", rupiah(2_513_500))
+        assertEquals("Rp305.000", rupiah(305_000))
+        assertEquals("-Rp100.000", rupiah(-100_000))
+        assertEquals("2,4518 gr", formatGrams4(2.4518))
         assertEquals("0,1 gr", gram(100))
         assertEquals("0,25 gr", gram(250))
         assertEquals("1000 gr", gram(1_000_000))
@@ -31,6 +33,9 @@ class MockRepositoryTest {
     fun weakPins() {
         listOf("111111", "123456", "654321", "121212", "12345").forEach { assertTrue(Rules.isWeakPin(it), it) }
         listOf("147258", "902714").forEach { assertFalse(Rules.isWeakPin(it), it) }
+        // PIN tanggal lahir dicegah
+        assertTrue(Rules.isWeakPin("140392", dob = "14/03/1992"))
+        assertTrue(Rules.isWeakPin("920314", dob = "14/03/1992"))
     }
 
     @Test
@@ -268,8 +273,154 @@ class MockRepositoryTest {
     @Test
     fun pinLocksAfterRepeatedFailures() {
         demo()
-        repeat(Rules.MAX_PIN_ATTEMPTS) { assertFalse(repo.verifyPin("000000")) }
-        assertCode("PIN_LOCKED") { repo.verifyPin(MockRepository.DEMO_PIN) }
+        // 2x salah: mengembalikan false
+        assertFalse(repo.verifyPin("000000"))
+        assertFalse(repo.verifyPin("000000"))
+        // Percobaan ke-3 salah: mengunci PIN sementara dan melempar PIN_LOCKED
+        assertCode("PIN_LOCKED") { repo.verifyPin("000000") }
+    }
+
+    @Test
+    fun goldinPasswordRules() {
+        // Aturan: Minimal 8 karakter dan mengandung huruf kapital
+        assertFalse(Rules.isValidGoldinPassword("pendek"))
+        assertFalse(Rules.isValidGoldinPassword("tanpakapital123"))
+        assertFalse(Rules.isValidGoldinPassword("KAPITAL"))
+        assertTrue(Rules.isValidGoldinPassword("Reitesting123"))
+        assertTrue(Rules.isValidGoldinPassword("Password8"))
+    }
+
+    @Test
+    fun goldinLoginCredentialsValidation() {
+        // Password salah untuk akun resmi
+        assertCode("INVALID_CREDENTIALS") {
+            repo.login(MockRepository.GOLDIN_DEMO_EMAIL, "PasswordSalah")
+        }
+        // Format email tidak valid
+        assertCode("INVALID_CREDENTIALS") {
+            repo.login("bukanemail", "Reitesting123")
+        }
+        // Berhasil login dengan kredensial benar
+        repo.login(MockRepository.GOLDIN_DEMO_EMAIL, MockRepository.GOLDIN_DEMO_PASSWORD)
+        assertEquals(MockRepository.GOLDIN_DEMO_EMAIL, state.user?.email)
+    }
+
+    @Test
+    fun goldinMultiTierPinLockoutAndResetFlow() {
+        repo.startDemoAccount()
+        assertEquals(0, state.pinFailedAttempts)
+        assertEquals(0, state.pinLockLevel)
+        assertFalse(state.isAccountLocked)
+
+        // Set 1: 1x salah, 2x salah, 3x salah -> Lock 10 menit
+        val res1 = repo.checkLoginPin("999999")
+        assertTrue(res1 is PinVerifyResult.Incorrect && res1.remainingAttempts == 2)
+        val res2 = repo.checkLoginPin("999999")
+        assertTrue(res2 is PinVerifyResult.Incorrect && res2.remainingAttempts == 1)
+        val res3 = repo.checkLoginPin("999999")
+        assertTrue(res3 is PinVerifyResult.TemporarilyLocked && res3.level == 1 && res3.lockMinutes == 10)
+        assertEquals(1, state.pinLockLevel)
+
+        // Set 2: 3x salah lagi -> Lock 30 menit
+        repo.checkLoginPin("999999")
+        repo.checkLoginPin("999999")
+        val resLvl2 = repo.checkLoginPin("999999")
+        assertTrue(resLvl2 is PinVerifyResult.TemporarilyLocked && resLvl2.level == 2 && resLvl2.lockMinutes == 30)
+        assertEquals(2, state.pinLockLevel)
+
+        // Set 3: 3x salah lagi -> Lock 60 menit (1 jam)
+        repo.checkLoginPin("999999")
+        repo.checkLoginPin("999999")
+        val resLvl3 = repo.checkLoginPin("999999")
+        assertTrue(resLvl3 is PinVerifyResult.TemporarilyLocked && resLvl3.level == 3 && resLvl3.lockMinutes == 60)
+        assertEquals(3, state.pinLockLevel)
+
+        // Set 4: 3x salah lagi -> Akun Terkunci (AccountLocked)
+        repo.checkLoginPin("999999")
+        repo.checkLoginPin("999999")
+        val resLvl4 = repo.checkLoginPin("999999")
+        assertTrue(resLvl4 is PinVerifyResult.AccountLocked)
+        assertTrue(state.isAccountLocked)
+
+        // Setelah terkunci, percobaan PIN apapun mengembalikan AccountLocked
+        assertTrue(repo.checkLoginPin("135790") is PinVerifyResult.AccountLocked)
+
+        // Alur Lupa PIN: Reset PIN membuka kunci akun
+        repo.unlockAccountWithResetPin("902714")
+        assertFalse(state.isAccountLocked)
+        assertEquals(0, state.pinLockLevel)
+        assertEquals(0, state.pinFailedAttempts)
+        assertEquals("902714", state.pin)
+
+        // Verifikasi PIN baru berhasil
+        assertTrue(repo.checkLoginPin("902714") is PinVerifyResult.Success)
+    }
+
+    @Test
+    fun goldinResetPasswordFlow() {
+        repo.startDemoAccount()
+        // Email tidak terdaftar
+        assertCode("EMAIL_NOT_FOUND") {
+            repo.resetPassword("tidakada@gmail.com", "PasswordBaru123")
+        }
+        // Password tidak memenuhi aturan
+        assertCode("INVALID_PASSWORD") {
+            repo.resetPassword(MockRepository.GOLDIN_DEMO_EMAIL, "lemah")
+        }
+        // Berhasil reset password
+        repo.resetPassword(MockRepository.GOLDIN_DEMO_EMAIL, "SandiBaru2026")
+        assertEquals("SandiBaru2026", state.registeredPassword)
+
+        // Login dengan password lama gagal
+        assertCode("INVALID_CREDENTIALS") {
+            repo.login(MockRepository.GOLDIN_DEMO_EMAIL, MockRepository.GOLDIN_DEMO_PASSWORD)
+        }
+        // Login dengan password baru sukses
+        repo.login(MockRepository.GOLDIN_DEMO_EMAIL, "SandiBaru2026")
+        assertEquals(MockRepository.GOLDIN_DEMO_EMAIL, state.user?.email)
+    }
+
+    @Test
+    fun goldinDemoAccountSeedVerification() {
+        repo.startDemoAccount()
+        assertEquals("reiuser@gmail.com", state.user?.email)
+        assertEquals("Budi Santoso", state.user?.name)
+        assertTrue(state.user?.verified == true)
+        assertEquals(1_250_000L, state.walletBalance)
+        assertEquals(2.4518, state.goldBalanceGrams)
+        assertEquals(1, state.bankAccounts.size)
+        assertEquals("•••• 1234", state.bankAccounts.first().number)
+        assertEquals(1, state.savedAddresses.size)
+        assertEquals("15113", state.savedAddresses.first().postalCode)
+        assertEquals(1, state.routinePlans.size)
+        assertEquals("Dana darurat", state.routinePlans.first().name)
+        assertEquals(8, state.notifications.size)
+        assertTrue(repo.verifyPin("135790"))
+    }
+
+    @Test
+    fun goldinUsernameAndRegisterProfileFields() {
+        assertEquals("salsa_gold", Rules.normalizeUsername("  Salsa_Gold "))
+        assertFalse(Rules.isUsernameMinLength("abc"))
+        assertTrue(Rules.isUsernameMinLength("salsa"))
+        listOf("admin", "EMDIG", "indriana", "emas").forEach {
+            assertTrue(Rules.isUsernameTaken(it), it)
+        }
+        assertFalse(Rules.isUsernameTaken("salsabila"))
+
+        repo.register(
+            name = "Salsa Nabila",
+            email = "salsa@gmail.com",
+            password = "Password1",
+            username = "SalsaGold",
+            birthDate = "11/02/2003",
+        )
+        assertEquals("salsagold", state.user?.username)
+        assertEquals("11/02/2003", state.user?.birthDate)
+        assertFalse(state.user?.verified == true)
+        assertTrue(repo.isRegisteredEmail("salsa@gmail.com"))
+        assertTrue(repo.isRegisteredEmail(MockRepository.GOLDIN_DEMO_EMAIL))
+        assertFalse(repo.isRegisteredEmail("asing@gmail.com"))
     }
 
     @Test

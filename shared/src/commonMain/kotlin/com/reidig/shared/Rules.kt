@@ -20,7 +20,24 @@ object Rules {
 
     fun hasLettersAndNumbers(password: String) = password.any { it.isLetter() } && password.any { it.isDigit() }
 
+    fun hasCapitalLetter(password: String) = password.any { it.isUpperCase() }
+
     fun isValidPassword(password: String) = hasMinLength(password) && hasLettersAndNumbers(password)
+
+    /** Aturan kata sandi Goldin v1.2: Minimal 8 karakter dan Mengandung huruf kapital. */
+    fun isValidGoldinPassword(password: String) = hasMinLength(password) && hasCapitalLetter(password)
+
+    /** Daftar username terpakai pada prototipe Goldin v1.2 untuk uji live availability check. */
+    val TAKEN_USERNAMES = setOf("admin", "emdig", "indriana", "emas")
+
+    fun normalizeUsername(raw: String): String = raw.replace(Regex("\\s+"), "").lowercase()
+
+    fun isUsernameMinLength(username: String): Boolean = normalizeUsername(username).length >= 4
+
+    fun isUsernameTaken(username: String): Boolean = normalizeUsername(username) in TAKEN_USERNAMES
+
+    /** Durasi kunci PIN bertingkat (menit): 10 menit, 30 menit, 60 menit (1 jam). */
+    val PIN_LOCK_DURATIONS_MINUTES = listOf(10, 30, 60)
 
     /** Nomor setelah +62, tanpa angka 0 di depan. */
     fun isValidIndonesianPhone(digits: String) = digits.all { it in '0'..'9' } && digits.startsWith("8") && digits.length in 9..12
@@ -48,11 +65,24 @@ object Rules {
         else -> 31
     }
 
-    fun isWeakPin(pin: String): Boolean {
+    fun isWeakPin(pin: String, dob: String? = null): Boolean {
         if (pin.length != 6 || !pin.all { it in '0'..'9' }) return true
         if (pin.toSet().size <= 2) return true
         val steps = pin.zipWithNext { a, b -> b - a }
-        return steps.all { it == 1 } || steps.all { it == -1 }
+        if (steps.all { it == 1 } || steps.all { it == -1 }) return true
+
+        if (dob != null) {
+            val parts = dob.split("/")
+            if (parts.size == 3) {
+                val dd = parts[0].padStart(2, '0')
+                val mm = parts[1].padStart(2, '0')
+                val yyyy = parts[2]
+                val yy = if (yyyy.length >= 4) yyyy.substring(2) else ""
+                val birthCodes = setOf(dd + mm + yy, yy + mm + dd, mm + dd + yy)
+                if (pin in birthCodes) return true
+            }
+        }
+        return false
     }
 
     fun isPickupEligible(totalWeightMg: Long) = totalWeightMg >= PICKUP_MIN_WEIGHT_MG
@@ -63,7 +93,22 @@ object Rules {
 fun rupiah(value: Long): String {
     val digits = kotlin.math.abs(value).toString()
     val grouped = digits.reversed().chunked(3).joinToString(".").reversed()
-    return (if (value < 0) "-Rp " else "Rp ") + grouped
+    return (if (value < 0) "-Rp" else "Rp") + grouped
+}
+
+/** Format angka murni tanpa awalan Rp, dengan pemisah titik (digunakan pada rincian struk). */
+fun formatNumberOnly(value: Long): String {
+    val digits = kotlin.math.abs(value).toString()
+    val grouped = digits.reversed().chunked(3).joinToString(".").reversed()
+    return (if (value < 0) "-" else "") + grouped
+}
+
+/** Format berat emas 4 desimal dengan koma sesuai prototipe Goldin v1.2: misal 2,4518 gr. */
+fun formatGrams4(grams: Double): String {
+    val intPart = grams.toLong()
+    val fracPart = kotlin.math.round((grams - intPart) * 10000).toLong().coerceIn(0, 9999)
+    val fracStr = fracPart.toString().padStart(4, '0')
+    return "$intPart,$fracStr gr"
 }
 
 fun gram(weightMg: Long): String {

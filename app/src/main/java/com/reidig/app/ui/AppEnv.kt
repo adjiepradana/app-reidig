@@ -63,7 +63,19 @@ class AppEnv(
 class SignupDraft {
     var email: String = ""
     var name: String = ""
+    var username: String = ""
     var dob: String = ""
+    var password: String = ""
+    var viaGoogle: Boolean = false
+
+    fun reset() {
+        email = ""
+        name = ""
+        username = ""
+        dob = ""
+        password = ""
+        viaGoogle = false
+    }
 }
 
 class KycDraft {
