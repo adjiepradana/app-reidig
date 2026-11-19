@@ -63,7 +63,7 @@ private fun TokenStatusChip(token: GoldToken, now: Long) {
 }
 
 @Composable
-fun PortfolioScreen(env: AppEnv, onToken: (String) -> Unit, onPrint: () -> Unit, onBuy: () -> Unit, header: @Composable () -> Unit = {}) {
+fun LegacyPortfolioScreen(env: AppEnv, onToken: (String) -> Unit, onPrint: () -> Unit, onBuy: () -> Unit, header: @Composable () -> Unit = {}) {
     val state by env.repo.state.collectAsStateWithLifecycle()
     val now = System.currentTimeMillis()
     Column(Modifier.fillMaxSize().background(Palette.Paper).statusBarsPadding()) {
@@ -154,11 +154,11 @@ fun PortfolioScreen(env: AppEnv, onToken: (String) -> Unit, onPrint: () -> Unit,
 
 @ScreenPreview
 @Composable
-private fun PortfolioPreview() = ReidigTheme { PortfolioScreen(rememberPreviewEnv(), {}, {}, {}) }
+private fun PortfolioPreview() = ReidigTheme { LegacyPortfolioScreen(rememberPreviewEnv(), {}, {}, {}) }
 
 @ScreenPreview
 @Composable
-private fun PortfolioEmptyPreview() = ReidigTheme { PortfolioScreen(rememberPreviewEnv(false), {}, {}, {}) }
+private fun PortfolioEmptyPreview() = ReidigTheme { LegacyPortfolioScreen(rememberPreviewEnv(false), {}, {}, {}) }
 
 @Composable
 fun PrintOrderCard(order: PrintOrder) {

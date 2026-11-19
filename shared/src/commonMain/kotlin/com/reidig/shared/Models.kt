@@ -2,15 +2,29 @@ package com.reidig.shared
 
 enum class TokenStatus { ACTIVE, LOCKED_INSTALLMENT, PRINT_PENDING, RETURNED, PRINTED, CANCELLED }
 
-enum class PaymentMethod(val label: String) {
-    WALLET("Saldo Kas"),
-    QRIS("QRIS"),
-    VIRTUAL_ACCOUNT("Virtual Account BCA"),
-    VA_BCA("BCA Virtual Account"),
-    VA_BRI("BRI Virtual Account"),
-    VA_MANDIRI("Mandiri Virtual Account"),
-    VA_BNI("BNI Virtual Account"),
-    CICILAN("Cicil Emas (BSI Finance)"),
+enum class PaymentMethod(
+    val label: String,
+    val key: String = "",
+    val vaPrefix: String? = null,
+) {
+    WALLET("Saldo Kas", "kas"),
+    QRIS("QRIS", "qris"),
+    VIRTUAL_ACCOUNT("Virtual Account BCA", "va-bca", "39358"),
+    VA_BCA("BCA Virtual Account", "va-bca", "39358"),
+    VA_BRI("BRI Virtual Account", "va-bri", "88810"),
+    VA_MANDIRI("Mandiri Virtual Account", "va-mandiri", "89508"),
+    VA_BNI("BNI Virtual Account", "va-bni", "98816"),
+    CICILAN("Cicil Emas (BSI Finance)", "cicil"),
+    ROUTINE("Tabungan rutin", "routine");
+
+    val isVa: Boolean get() = vaPrefix != null
+    val isWallet: Boolean get() = this == WALLET
+    val isQris: Boolean get() = this == QRIS
+    val isCicil: Boolean get() = this == CICILAN
+
+    companion object {
+        fun fromKey(key: String): PaymentMethod = values().firstOrNull { it.key == key } ?: WALLET
+    }
 }
 
 enum class PrintMethod(val label: String) {
@@ -80,7 +94,46 @@ data class BankAccount(
     val number: String,
     val holder: String,
     val isAutoDebitActive: Boolean = false,
+    val addedAtMs: Long = 0L,
+    val isPrimary: Boolean = false,
+) {
+    val maskedNumber: String
+        get() {
+            val clean = number.filter { it.isDigit() }
+            return if (clean.length >= 4) {
+                "•••• " + clean.takeLast(4)
+            } else {
+                number
+            }
+        }
+    val displayLabel: String get() = "$bank $maskedNumber"
+}
+
+// ===== Konstanta & Bank Portofolio (Handoff §9 & §14, Prototipe L3386) =====
+
+const val MIN_TOPUP_RP = 10_000L
+const val TOPUP_FEE = 1_000L
+const val MIN_WITHDRAW_RP = 50_000L
+const val WITHDRAW_FEE = 2_500L
+const val CUST_VA_NUMBER = "100248173561"
+
+data class SupportedBank(
+    val key: String,
+    val name: String,
+    val vaPrefix: String,
 )
+
+val SUPPORTED_BANKS = listOf(
+    SupportedBank(key = "bca", name = "BCA", vaPrefix = "3901"),
+    SupportedBank(key = "bri", name = "BRI", vaPrefix = "8881"),
+    SupportedBank(key = "mandiri", name = "Mandiri", vaPrefix = "8950"),
+    SupportedBank(key = "bni", name = "BNI", vaPrefix = "9881"),
+)
+
+fun findSupportedBank(keyOrName: String): SupportedBank =
+    SUPPORTED_BANKS.firstOrNull {
+        it.key.equals(keyOrName, ignoreCase = true) || it.name.equals(keyOrName, ignoreCase = true)
+    } ?: SUPPORTED_BANKS[0]
 
 data class Branch(
     val id: String,
@@ -137,16 +190,139 @@ data class Tx(
     val title: String,
     val amount: Long,
     val atMs: Long,
-    val status: String = "ok", // ok, pending, fail
+    val status: String = "ok", // "ok", "pending", "fail", "process"
     val method: String = "Saldo Kas",
+    val paymentMethod: PaymentMethod = PaymentMethod.WALLET,
     val grams: Double = 0.0,
     val pricePerGram: Long = 0,
+    val subtotal: Long = 0,
     val fee: Long = 0,
     val tax: Long = 0,
+    val total: Long = 0,
+    val expiresAtMs: Long? = null,
     val bursaRef: String? = null,
     val kliringRef: String? = null,
     val payRef: String? = null,
+    val virtualAccountNumber: String? = null,
+    val qrisPayload: String? = null,
+    val failureReason: String? = null,
+    val planId: String? = null,
+    val brand: String? = null,
+    val destination: String? = null,
+    val bankAccount: String? = null,
+    val executedAtMs: Long? = null,
+    val settledAtMs: Long? = null,
+) {
+    val effectiveTotal: Long get() = if (total != 0L) total else kotlin.math.abs(amount)
+    val effectiveSubtotal: Long
+        get() = when {
+            subtotal != 0L -> subtotal
+            type == TxType.BUY -> (effectiveTotal - fee - tax).coerceAtLeast(0L)
+            type == TxType.SELL -> (effectiveTotal + fee + tax)
+            else -> effectiveTotal
+        }
+    val isTrade: Boolean get() = type == TxType.BUY || type == TxType.SELL
+    fun isAct(nowMs: Long): Boolean = (status == "pending" && (expiresAtMs == null || nowMs < expiresAtMs)) || status == "process"
+}
+
+// ===== Konstanta & Model Perhitungan Transaksi (Handoff §7 & §14) =====
+
+const val MIN_TRADE_RP = 10_000L
+const val TRADE_ADMIN_FEE = 1_000L
+const val TRADE_TAX_RATE = 0.0025 // PPh 22: 0,25%
+const val PRICE_LOCK_SECONDS = 30
+const val PAYMENT_WINDOW_MINUTES = 15
+
+/** Pembulatan ke bawah dengan presisi 4 desimal (0,0000 gr) per prototipe Goldin v1.2. */
+fun floorGrams4(grams: Double): Double = kotlin.math.floor(grams * 10_000.0 + 1e-6) / 10_000.0
+
+data class TradeCalculation(
+    val isBuy: Boolean,
+    val pricePerGram: Long,
+    val grams: Double,
+    val subtotal: Long,
+    val adminFee: Long,
+    val tax: Long,
+    val total: Long,
 )
+
+data class TradeQuote(
+    val id: String,
+    val isBuy: Boolean,
+    val lockedPricePerGram: Long,
+    val grams: Double,
+    val subtotal: Long,
+    val adminFee: Long,
+    val tax: Long,
+    val total: Long,
+    val lockedAtMs: Long,
+    val expiresAtMs: Long,
+) {
+    fun isExpired(nowMs: Long): Boolean = nowMs >= expiresAtMs
+    fun secondsRemaining(nowMs: Long): Int = ((expiresAtMs - nowMs).coerceAtLeast(0L) / 1000L).toInt()
+}
+
+/** Menghitung nominal, berat, admin, pajak, dan total berdasarkan aturan Handoff §7 & §14. */
+fun calculateTradeAmounts(
+    isBuy: Boolean,
+    pricePerGram: Long,
+    inputGrams: Double? = null,
+    inputSubtotal: Long? = null,
+): TradeCalculation {
+    val subtotal: Long
+    val grams: Double
+    if (inputSubtotal != null) {
+        subtotal = inputSubtotal
+        grams = if (pricePerGram > 0) floorGrams4(subtotal.toDouble() / pricePerGram.toDouble()) else 0.0
+    } else {
+        grams = floorGrams4(inputGrams ?: 0.0)
+        subtotal = kotlin.math.round(grams * pricePerGram.toDouble()).toLong()
+    }
+    val adminFee = TRADE_ADMIN_FEE
+    val tax = kotlin.math.round(subtotal.toDouble() * TRADE_TAX_RATE).toLong()
+    val total = if (isBuy) subtotal + adminFee + tax else (subtotal - adminFee - tax).coerceAtLeast(0L)
+    return TradeCalculation(
+        isBuy = isBuy,
+        pricePerGram = pricePerGram,
+        grams = grams,
+        subtotal = subtotal,
+        adminFee = adminFee,
+        tax = tax,
+        total = total,
+    )
+}
+
+/** Format tanggal 6 digit YYMMDD (KMP safe). */
+fun formatYmd(epochMs: Long): String {
+    val totalSeconds = epochMs / 1000L
+    val days = (totalSeconds / 86400L).toInt()
+    var l = days + 68569 + 2440588
+    val n = (4 * l) / 146097
+    l -= (146097 * n + 3) / 4
+    val i = (4000 * (l + 1)) / 1461001
+    l = l - (1461 * i) / 4 + 31
+    val j = (80 * l) / 2447
+    val day = l - (2447 * j) / 80
+    l = j / 11
+    val month = j + 2 - (12 * l)
+    val year = 100 * (n - 49) + i + l
+    val yy = (year % 100).toString().padStart(2, '0')
+    val mm = month.toString().padStart(2, '0')
+    val dd = day.toString().padStart(2, '0')
+    return "$yy$mm$dd"
+}
+
+/** Pembuatan nomor Virtual Account format bank (e.g. 39358 + 11 digit unik). */
+fun generateVaNumber(prefix: String, orderId: String): String {
+    val hash = kotlin.math.abs((orderId + "va").hashCode().toLong())
+    val customerSuffix = (hash % 100000000000L).toString().padStart(11, '0').take(11)
+    return prefix + customerSuffix
+}
+
+/** Format spasi per 4 digit Virtual Account (e.g. 3935 8100 2481 7356). */
+fun formatVaWithSpaces(va: String): String {
+    return va.replace(Regex("(\\d{4})(?=\\d)"), "$1 ")
+}
 
 data class UserProfile(
     val name: String,

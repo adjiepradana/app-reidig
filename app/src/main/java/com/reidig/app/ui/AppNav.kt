@@ -549,8 +549,8 @@ fun ReidigApp(repo: MockRepository) {
                 composable("home") {
                     HomeScreen(
                         env = env,
-                        onBuy = { requireVerifiedTab("catalog") },
-                        onSell = { requireVerifiedTab("sell-tab") },
+                        onBuy = { nav.switchTab("catalog") },
+                        onSell = { nav.switchTab("sell-tab") },
                         onPrint = { requireVerifiedTab("print-tab") },
                         onInstallment = { requireVerified("installment") },
                         onWithdraw = { requireVerifiedTab("wallet") },
@@ -571,16 +571,35 @@ fun ReidigApp(repo: MockRepository) {
                         env = env,
                         onBack = { nav.popBackStack() },
                         onOpenTransaction = { txId ->
-                            // Hook ke Struk transaksi pada Tahap 5; sementara arahkan ke Portofolio/Mutasi
                             if (txId != null) {
-                                nav.switchTab("wallet")
+                                val tx = state.transactions.find { it.id == txId }
+                                when {
+                                    tx?.type == com.reidig.shared.TxType.TOPUP && tx.status == "pending" && tx.method == "QRIS" -> {
+                                        nav.navigate("topup/qris/pay/$txId")
+                                    }
+                                    tx?.status == "pending" -> {
+                                        nav.navigate("trade/pay/$txId")
+                                    }
+                                    else -> {
+                                        nav.navigate("trade/receipt/$txId")
+                                    }
+                                }
                             }
                         },
                     )
                 }
                 composable("prices") { PriceTableScreen(env) { nav.popBackStack() } }
                 composable("catalog") {
-                    CatalogScreen(env, header = { TransactionSwitch(0) { nav.switchTab("sell-tab") } }) { code -> requireVerified("buy/$code") }
+                    TradeScreen(
+                        env = env,
+                        initialMode = "beli",
+                        tradePrefill = tradePrefill,
+                        onOpenLedger = { nav.navigate("ledger") },
+                        onOpenPendingTx = { txId -> nav.navigate("trade/pay/$txId") },
+                        onCheckout = { isBuy, quoteId -> nav.navigate("trade/checkout/$quoteId") },
+                        onStartKyc = ::startKycFlow,
+                        onPendingKycDrawer = { kycGateSheet = "wait" },
+                    )
                 }
                 composable("buy/{sku}", listOf(navArgument("sku") { type = NavType.StringType })) { entry ->
                     BuyScreen(env, entry.arguments!!.getString("sku")!!, { nav.popBackStack() }) { minted ->
@@ -593,7 +612,7 @@ fun ReidigApp(repo: MockRepository) {
                         "Pembelian berhasil!",
                         "Emasmu sudah tersimpan di brankas dan tercatat dalam portofolio.",
                         "Lihat portofolio",
-                        { nav.switchTab("portfolio") },
+                        { nav.switchTab("wallet") },
                     ) {
                         results.minted.forEach { token ->
                             SurfaceCard(Modifier.padding(bottom = 10.dp)) {
@@ -606,11 +625,18 @@ fun ReidigApp(repo: MockRepository) {
                 }
                 composable("portfolio") {
                     PortfolioScreen(
-                        env,
-                        onToken = { nav.navigate("token/$it") },
-                        onPrint = { nav.switchTab("print-tab") },
-                        onBuy = { nav.switchTab("catalog") },
-                        header = { WalletSwitch(1) { nav.switchTab("wallet") } },
+                        env = env,
+                        onBuyGold = { nav.switchTab("catalog") },
+                        onRoutinePlans = { nav.switchTab("wallet") },
+                        onInstallmentList = { requireVerified("installment") },
+                        onTopup = { requireVerified("topup") },
+                        onWithdraw = { requireVerified("withdraw") },
+                        onAddBank = { requireVerified("bank-add") },
+                        onOpenLedger = { nav.navigate("ledger") },
+                        onOpenReceipt = { txId -> nav.navigate("trade/receipt/$txId") },
+                        onStartKyc = {
+                            if (state.user?.isKycPending == true) kycGateSheet = "wait" else startKycFlow()
+                        },
                     )
                 }
                 composable("token/{code}", listOf(navArgument("code") { type = NavType.StringType })) { entry ->
@@ -623,15 +649,96 @@ fun ReidigApp(repo: MockRepository) {
                     )
                 }
                 composable("sell-tab") {
-                    SellPickerScreen(
-                        env,
-                        null,
-                        { nav.navigate("token/$it") },
-                        title = "Transaksi",
-                        header = {
-                            TransactionSwitch(1, inset = 0.dp) { nav.switchTab("catalog") }
-                            Spacer(Modifier.height(14.dp))
+                    TradeScreen(
+                        env = env,
+                        initialMode = "jual",
+                        tradePrefill = tradePrefill,
+                        onOpenLedger = { nav.navigate("ledger") },
+                        onOpenPendingTx = { txId -> nav.navigate("trade/pay/$txId") },
+                        onCheckout = { isBuy, quoteId -> nav.navigate("trade/checkout/$quoteId") },
+                        onStartKyc = ::startKycFlow,
+                        onPendingKycDrawer = { kycGateSheet = "wait" },
+                    )
+                }
+                composable(
+                    "trade/checkout/{quoteId}",
+                    arguments = listOf(navArgument("quoteId") { type = NavType.StringType }),
+                ) { entry ->
+                    val quoteId = entry.arguments?.getString("quoteId").orEmpty()
+                    TradeCheckoutScreen(
+                        env = env,
+                        quoteId = quoteId,
+                        onBack = { nav.popBackStack() },
+                        onPayWait = { txId ->
+                            nav.navigate("trade/pay/$txId") {
+                                popUpTo("catalog")
+                            }
                         },
+                        onDone = { txId ->
+                            nav.navigate("trade/done/$txId") {
+                                popUpTo("catalog")
+                            }
+                        },
+                    )
+                }
+                composable(
+                    "trade/pay/{txId}",
+                    arguments = listOf(navArgument("txId") { type = NavType.StringType }),
+                ) { entry ->
+                    val txId = entry.arguments?.getString("txId").orEmpty()
+                    TradePayScreen(
+                        env = env,
+                        txId = txId,
+                        onBack = { nav.popBackStack() },
+                        onDone = { completedTxId ->
+                            nav.navigate("trade/done/$completedTxId") {
+                                popUpTo("catalog")
+                            }
+                        },
+                        onCancelOrder = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    "trade/done/{txId}",
+                    arguments = listOf(navArgument("txId") { type = NavType.StringType }),
+                ) { entry ->
+                    val txId = entry.arguments?.getString("txId").orEmpty()
+                    TradeDoneScreen(
+                        env = env,
+                        txId = txId,
+                        onHome = { nav.switchTab("home") },
+                        onPortfolio = { nav.switchTab("wallet") },
+                        onReceipt = { nav.navigate("trade/receipt/$txId") },
+                    )
+                }
+                composable("ledger") {
+                    LedgerScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onOpenReceipt = { txId -> nav.navigate("trade/receipt/$txId") },
+                        onOpenPendingPay = { txId -> nav.navigate("trade/pay/$txId") },
+                    )
+                }
+                composable(
+                    "trade/receipt/{txId}",
+                    arguments = listOf(navArgument("txId") { type = NavType.StringType }),
+                ) { entry ->
+                    val txId = entry.arguments?.getString("txId").orEmpty()
+                    ReceiptScreen(
+                        env = env,
+                        txId = txId,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    "receipt/{txId}",
+                    arguments = listOf(navArgument("txId") { type = NavType.StringType }),
+                ) { entry ->
+                    val txId = entry.arguments?.getString("txId").orEmpty()
+                    ReceiptScreen(
+                        env = env,
+                        txId = txId,
+                        onBack = { nav.popBackStack() },
                     )
                 }
                 composable("print-tab") {
@@ -656,21 +763,144 @@ fun ReidigApp(repo: MockRepository) {
                             "Keping sedang disiapkan untuk dikirim dengan JNE."
                         },
                         "Lihat portofolio",
-                        { nav.switchTab("portfolio") },
+                        { nav.switchTab("wallet") },
                     ) {
                         order?.let { PrintOrderCard(it) }
                     }
                 }
                 composable("wallet") {
-                    WalletScreen(
-                        env,
-                        header = { WalletSwitch(0) { nav.switchTab("portfolio") } },
-                        onPortfolio = { nav.switchTab("portfolio") },
-                        onWithdraw = { nav.navigate("withdraw") },
+                    PortfolioScreen(
+                        env = env,
+                        onBuyGold = { nav.switchTab("catalog") },
+                        onRoutinePlans = { nav.switchTab("wallet") },
+                        onInstallmentList = { requireVerified("installment") },
+                        onTopup = { requireVerified("topup") },
+                        onWithdraw = { requireVerified("withdraw") },
+                        onAddBank = { requireVerified("bank-add") },
+                        onOpenLedger = { nav.navigate("ledger") },
+                        onOpenReceipt = { txId -> nav.navigate("trade/receipt/$txId") },
+                        onStartKyc = {
+                            if (state.user?.isKycPending == true) kycGateSheet = "wait" else startKycFlow()
+                        },
+                    )
+                }
+                composable("bank-add") {
+                    BankAddScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onAccountAdded = { nav.popBackStack() },
+                    )
+                }
+                composable("bank/add") {
+                    BankAddScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onAccountAdded = { nav.popBackStack() },
+                    )
+                }
+                composable("topup") {
+                    TopupMethodScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onSelectVa = { bankKey -> nav.navigate("topup/va/$bankKey") },
+                        onSelectQris = { nav.navigate("topup/qris") },
+                    )
+                }
+                composable(
+                    "topup/va/{bankKey}",
+                    arguments = listOf(navArgument("bankKey") { type = NavType.StringType }),
+                ) { entry ->
+                    val bankKey = entry.arguments?.getString("bankKey").orEmpty()
+                    TopupVaScreen(
+                        env = env,
+                        bankKey = bankKey,
+                        onBack = { nav.popBackStack() },
+                        onTopupSuccess = { txId ->
+                            nav.navigate("topup/done/$txId") {
+                                popUpTo("wallet")
+                            }
+                        },
+                    )
+                }
+                composable("topup/qris") {
+                    TopupQrisScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onQrCreated = { txId -> nav.navigate("topup/qris/pay/$txId") },
+                    )
+                }
+                composable(
+                    "topup/qris/pay/{txId}",
+                    arguments = listOf(navArgument("txId") { type = NavType.StringType }),
+                ) { entry ->
+                    val txId = entry.arguments?.getString("txId").orEmpty()
+                    TopupQrPayScreen(
+                        env = env,
+                        txId = txId,
+                        onBack = { nav.popBackStack("wallet", inclusive = false) },
+                        onPaySuccess = { completedId ->
+                            nav.navigate("topup/done/$completedId") {
+                                popUpTo("wallet")
+                            }
+                        },
+                    )
+                }
+                composable(
+                    "topup/done/{txId}",
+                    arguments = listOf(navArgument("txId") { type = NavType.StringType }),
+                ) { entry ->
+                    val txId = entry.arguments?.getString("txId").orEmpty()
+                    TopupDoneScreen(
+                        env = env,
+                        txId = txId,
+                        onReceipt = { id -> nav.navigate("trade/receipt/$id") },
+                        onPortfolio = { nav.switchTab("wallet") },
                     )
                 }
                 composable("withdraw") {
-                    WithdrawScreen(env, { nav.popBackStack() }) { nav.switchTab("wallet") }
+                    WithdrawScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onAddBank = { requireVerified("bank-add") },
+                        onReview = { accId, amount ->
+                            nav.navigate("withdraw/review/$accId/$amount")
+                        },
+                    )
+                }
+                composable(
+                    "withdraw/review/{accId}/{amount}",
+                    arguments = listOf(
+                        navArgument("accId") { type = NavType.StringType },
+                        navArgument("amount") { type = NavType.LongType },
+                    ),
+                ) { entry ->
+                    val accId = entry.arguments?.getString("accId").orEmpty()
+                    val amount = entry.arguments?.getLong("amount") ?: 0L
+                    WithdrawReviewScreen(
+                        env = env,
+                        bankAccountId = accId,
+                        amount = amount,
+                        onBack = { nav.popBackStack() },
+                        onSuccess = { txId ->
+                            nav.navigate("withdraw/done/$txId") {
+                                popUpTo("wallet")
+                            }
+                        },
+                    )
+                }
+                composable(
+                    "withdraw/done/{txId}",
+                    arguments = listOf(
+                        navArgument("txId") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    val txId = entry.arguments?.getString("txId").orEmpty()
+                    WithdrawDoneScreen(
+                        env = env,
+                        txId = txId,
+                        onReceipt = { id -> nav.navigate("trade/receipt/$id") },
+                        onPortfolio = { nav.switchTab("wallet") },
+                    )
                 }
                 composable("installment") {
                     InstallmentScreen(env, { nav.popBackStack() }) { draft ->

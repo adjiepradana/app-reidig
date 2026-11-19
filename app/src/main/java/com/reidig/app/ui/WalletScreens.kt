@@ -351,7 +351,7 @@ private fun TxRow(tx: Tx) {
 }
 
 @Composable
-fun WithdrawScreen(env: AppEnv, onBack: () -> Unit, onDone: () -> Unit) {
+fun LegacyWithdrawScreen(env: AppEnv, onBack: () -> Unit, onDone: () -> Unit) {
     val state by env.repo.state.collectAsStateWithLifecycle()
     var input by rememberSaveable { mutableStateOf("") }
     var askPin by remember { mutableStateOf(false) }
@@ -446,7 +446,7 @@ fun WithdrawScreen(env: AppEnv, onBack: () -> Unit, onDone: () -> Unit) {
 
 @ScreenPreview
 @Composable
-private fun WithdrawPreview() = ReidigTheme { WithdrawScreen(rememberPreviewEnv(), {}, {}) }
+private fun WithdrawPreview() = ReidigTheme { LegacyWithdrawScreen(rememberPreviewEnv(), {}, {}) }
 
 private val TENORS = listOf(3, 6, 12)
 private val DOWN_PAYMENT_PERCENTS = listOf(10, 20, 30)

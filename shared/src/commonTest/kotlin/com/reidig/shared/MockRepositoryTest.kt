@@ -389,7 +389,7 @@ class MockRepositoryTest {
         assertEquals(1_250_000L, state.walletBalance)
         assertEquals(2.4518, state.goldBalanceGrams)
         assertEquals(1, state.bankAccounts.size)
-        assertEquals("•••• 1234", state.bankAccounts.first().number)
+        assertEquals("•••• 1234", state.bankAccounts.first().maskedNumber)
         assertEquals(1, state.savedAddresses.size)
         assertEquals("15113", state.savedAddresses.first().postalCode)
         assertEquals(1, state.routinePlans.size)
@@ -518,5 +518,377 @@ class MockRepositoryTest {
         assertEquals(null, state.user)
         assertTrue(state.tokens.isEmpty())
         assertEquals(0, state.walletBalance)
+    }
+
+    // ===== Tes Sub-Tahap 5.1: Transaksi, Perhitungan Finansial, Price-Lock & Riwayat =====
+
+    @Test
+    fun tradeMathFormulasBuyAndSell() {
+        // Rumus Beli: Subtotal Rp250.000 @ Rp2.298.000/gr
+        val buyCalc = calculateTradeAmounts(isBuy = true, pricePerGram = 2_298_000L, inputSubtotal = 250_000L)
+        assertEquals(0.1087, buyCalc.grams)
+        assertEquals(250_000L, buyCalc.subtotal)
+        assertEquals(1_000L, buyCalc.adminFee)
+        assertEquals(625L, buyCalc.tax) // 250.000 * 0.0025 = 625
+        assertEquals(251_625L, buyCalc.total)
+
+        // Rumus Jual: Subtotal Rp150.000 @ Rp2.241.000/gr -> 0,0669 gr, fee Rp1.000, tax Rp375, dana diterima Rp148.625
+        val sellCalc = calculateTradeAmounts(isBuy = false, pricePerGram = 2_241_000L, inputSubtotal = 150_000L)
+        assertEquals(0.0669, sellCalc.grams)
+        assertEquals(150_000L, sellCalc.subtotal)
+        assertEquals(1_000L, sellCalc.adminFee)
+        assertEquals(375L, sellCalc.tax) // 150.000 * 0.0025 = 375
+        assertEquals(148_625L, sellCalc.total) // Dana diterima
+
+        // Rumus Jual input berat: 0.1 gr @ Rp2.200.000/gr -> subtotal Rp220.000
+        val sellByGrams = calculateTradeAmounts(isBuy = false, pricePerGram = 2_200_000L, inputGrams = 0.1)
+        assertEquals(0.1, sellByGrams.grams)
+        assertEquals(220_000L, sellByGrams.subtotal)
+        assertEquals(1_000L, sellByGrams.adminFee)
+        assertEquals(550L, sellByGrams.tax) // 220.000 * 0.0025 = 550
+        assertEquals(218_450L, sellByGrams.total)
+
+        // Helper string format VA dan tanggal
+        assertEquals("251119", formatYmd(1763520000000L))
+        assertEquals("261119", formatYmd(1763520000000L + 365L * 86400 * 1000L))
+        val vaBca = generateVaNumber("39358", "TRX-B-101")
+        assertTrue(vaBca.startsWith("39358"))
+        assertEquals(16, vaBca.length)
+        val formattedVa = formatVaWithSpaces(vaBca)
+        assertTrue(formattedVa.contains(" "))
+    }
+
+    @Test
+    fun tradeQuotePriceLock30SecondsLifecycle() {
+        demo()
+        val quote = repo.createTradeQuote(isBuy = true, inputSubtotal = 100_000L)
+        assertEquals(30, quote.secondsRemaining(now))
+        assertFalse(quote.isExpired(now))
+
+        // Maju 15 detik: masih aktif
+        now += 15_000L
+        assertEquals(15, quote.secondsRemaining(now))
+        assertFalse(quote.isExpired(now))
+
+        // Maju 16 detik lagi (total 31 detik): kedaluwarsa
+        now += 16_000L
+        assertTrue(quote.isExpired(now))
+        assertEquals(0, quote.secondsRemaining(now))
+
+        // Order yang kedaluwarsa tidak bisa disubmit
+        assertCode("QUOTE_EXPIRED") {
+            repo.submitTradeOrder(quote.id, PaymentMethod.WALLET)
+        }
+
+        // Refresh quote mengunci harga saat ini untuk 30 detik baru
+        repo.refreshGoldPrice(deltaOverride = 2_000L) // Ask naik Rp2.000
+        val refreshed = repo.refreshTradeQuote(quote.id)
+        assertFalse(refreshed.isExpired(now))
+        assertEquals(state.askPricePerGram, refreshed.lockedPricePerGram)
+        assertEquals(30, refreshed.secondsRemaining(now))
+    }
+
+    @Test
+    fun tradeOrderMinRp10000Validation() {
+        demo()
+        assertCode("INVALID_AMOUNT") {
+            repo.createTradeQuote(isBuy = true, inputSubtotal = 5_000L)
+        }
+    }
+
+    @Test
+    fun tradeInstantWalletBuyAndSell() {
+        demo()
+        val initialWallet = state.walletBalance
+        val initialGold = state.goldBalanceGrams
+
+        // 1. Beli emas dengan Saldo Kas
+        val buyQuote = repo.createTradeQuote(isBuy = true, inputSubtotal = 100_000L)
+        val buyTx = repo.submitTradeOrder(buyQuote.id, PaymentMethod.WALLET)
+        assertEquals("ok", buyTx.status)
+        assertEquals(TxType.BUY, buyTx.type)
+        assertEquals(initialWallet - buyQuote.total, state.walletBalance)
+        assertEquals(initialGold + buyQuote.grams, state.goldBalanceGrams)
+        assertTrue(buyTx.bursaRef?.startsWith("BRS-") == true)
+        assertTrue(buyTx.kliringRef?.startsWith("KLR-") == true)
+        assertTrue(state.notifications.any { it.txId == buyTx.id && it.title == "Pembelian emas berhasil" })
+
+        // 2. Beli emas gagal saat Saldo Kas tidak cukup
+        val bigQuote = repo.createTradeQuote(isBuy = true, inputSubtotal = 10_000_000L)
+        assertCode("INSUFFICIENT_BALANCE") {
+            repo.submitTradeOrder(bigQuote.id, PaymentMethod.WALLET)
+        }
+
+        // 3. Jual emas ke Saldo Kas
+        val goldBeforeSell = state.goldBalanceGrams
+        val walletBeforeSell = state.walletBalance
+        val sellQuote = repo.createTradeQuote(isBuy = false, inputGrams = 0.05)
+        val sellTx = repo.submitTradeOrder(sellQuote.id, PaymentMethod.WALLET)
+        assertEquals("ok", sellTx.status)
+        assertEquals(TxType.SELL, sellTx.type)
+        assertEquals(goldBeforeSell - 0.05, state.goldBalanceGrams)
+        assertEquals(walletBeforeSell + sellQuote.total, state.walletBalance)
+        assertTrue(state.notifications.any { it.txId == sellTx.id && it.title == "Penjualan emas berhasil" })
+
+        // 4. Jual emas gagal jika melebihi saldo emas bebas
+        assertCode("INSUFFICIENT_GOLD") {
+            repo.createTradeQuote(isBuy = false, inputGrams = 100.0)
+        }
+    }
+
+    @Test
+    fun tradePendingVaAndQrisLifecycle() {
+        demo()
+        val initialGold = state.goldBalanceGrams
+
+        // 1. Submit order dengan VA BCA -> status pending, timer 15 menit
+        val quoteVa = repo.createTradeQuote(isBuy = true, inputSubtotal = 200_000L)
+        val txVa = repo.submitTradeOrder(quoteVa.id, PaymentMethod.VA_BCA)
+        assertEquals("pending", txVa.status)
+        assertTrue(txVa.virtualAccountNumber?.startsWith("39358") == true)
+        assertEquals(now + PAYMENT_WINDOW_MINUTES * 60 * 1000L, txVa.expiresAtMs)
+        assertEquals(initialGold, state.goldBalanceGrams) // Emas belum masuk
+
+        // Muncul di transaksi aktif
+        val activeList = repo.getActiveTransactions()
+        assertTrue(activeList.any { it.id == txVa.id })
+
+        // 2. Simulasi pembayaran selesai ("Cek status pembayaran")
+        now += 60_000L // 1 menit kemudian
+        val confirmedTx = repo.confirmTradePayment(txVa.id)
+        assertEquals("ok", confirmedTx.status)
+        assertTrue(confirmedTx.bursaRef?.startsWith("BRS-") == true)
+        assertTrue(confirmedTx.kliringRef?.startsWith("KLR-") == true)
+        assertEquals(initialGold + txVa.grams, state.goldBalanceGrams)
+        assertFalse(repo.getActiveTransactions().any { it.id == txVa.id })
+
+        // 3. Order kedaluwarsa setelah 15 menit
+        val quoteQris = repo.createTradeQuote(isBuy = true, inputSubtotal = 150_000L)
+        val txQris = repo.submitTradeOrder(quoteQris.id, PaymentMethod.QRIS)
+        assertEquals("pending", txQris.status)
+        now += (PAYMENT_WINDOW_MINUTES + 1) * 60 * 1000L // Melebihi 15 menit
+        assertCode("PAYMENT_EXPIRED") {
+            repo.confirmTradePayment(txQris.id)
+        }
+        val expiredTx = repo.getTransaction(txQris.id)
+        assertEquals("fail", expiredTx?.status)
+    }
+
+    @Test
+    fun tradeCancelOrder() {
+        demo()
+        val quote = repo.createTradeQuote(isBuy = true, inputSubtotal = 50_000L)
+        val tx = repo.submitTradeOrder(quote.id, PaymentMethod.VA_BRI)
+        assertEquals("pending", tx.status)
+
+        val cancelled = repo.cancelTradeOrder(tx.id)
+        assertEquals("fail", cancelled.status)
+        assertEquals("fail", repo.getTransaction(tx.id)?.status)
+        assertFalse(repo.getActiveTransactions().any { it.id == tx.id })
+    }
+
+    @Test
+    fun transactionFilterTabsAndRanges() {
+        demo()
+        // Tab Beli emas: harus mencakup Beli emas reguler dan debit Tabungan rutin
+        val beliTxs = repo.filterTransactions(tab = "beli")
+        assertTrue(beliTxs.isNotEmpty())
+        assertTrue(beliTxs.all { it.type == TxType.BUY || it.type == TxType.ROUTINE_DEBIT })
+        assertTrue(beliTxs.any { it.method == "Tabungan rutin" })
+
+        // Tab Jual emas
+        val jualTxs = repo.filterTransactions(tab = "jual")
+        assertTrue(jualTxs.isNotEmpty())
+        assertTrue(jualTxs.all { it.type == TxType.SELL })
+
+        // Tab Saldo Kas: top up dan tarik dana
+        val kasTxs = repo.filterTransactions(tab = "kas")
+        assertTrue(kasTxs.isNotEmpty())
+        assertTrue(kasTxs.all { it.type == TxType.TOPUP || it.type == TxType.WITHDRAW })
+
+        // Filter status: selesai (ok) vs gagal (fail)
+        val okTxs = repo.filterTransactions(statusFilter = "ok")
+        assertTrue(okTxs.all { it.status == "ok" })
+        val failTxs = repo.filterTransactions(statusFilter = "fail")
+        assertTrue(failTxs.all { it.status == "fail" })
+    }
+
+    // ===== PENGUJIAN TAHAP 6: PORTOFOLIO, SALDO KAS, REKENING BANK & TOP UP / TARIK DANA =====
+
+    @Test
+    fun portfolioIndependentEyeToggles() {
+        demo()
+        assertTrue(state.hidePortfolioGold)
+        assertTrue(state.hidePortfolioCash)
+
+        repo.toggleHidePortfolioGold()
+        assertFalse(state.hidePortfolioGold)
+        assertTrue(state.hidePortfolioCash)
+
+        repo.toggleHidePortfolioCash()
+        assertFalse(state.hidePortfolioGold)
+        assertFalse(state.hidePortfolioCash)
+
+        repo.toggleHidePortfolioGold()
+        assertTrue(state.hidePortfolioGold)
+        assertFalse(state.hidePortfolioCash)
+    }
+
+    @Test
+    fun topupVaLifecycle() {
+        demo()
+        val initialWallet = state.walletBalance
+
+        // 1. Request Top Up VA BCA (prefix 3901)
+        val txBca = repo.requestTopupVa("bca")
+        assertEquals("pending", txBca.status)
+        assertEquals(TxType.TOPUP, txBca.type)
+        assertEquals("BCA Virtual Account", txBca.method)
+        assertEquals(TOPUP_FEE, txBca.fee)
+        val expectedVa = "3901" + CUST_VA_NUMBER
+        assertEquals(expectedVa, txBca.virtualAccountNumber)
+        assertEquals(initialWallet, state.walletBalance) // Saldo belum bertambah
+
+        // 2. Request Top Up VA Mandiri (prefix 8950)
+        val txMandiri = repo.requestTopupVa("mandiri")
+        assertEquals("8950" + CUST_VA_NUMBER, txMandiri.virtualAccountNumber)
+
+        // 3. Simulasi pembayaran VA selesai (+Rp500.000)
+        val settled = repo.simulateVaTopupSuccess(txBca.id, 500_000L)
+        assertEquals("ok", settled.status)
+        assertEquals(initialWallet + 500_000L, state.walletBalance)
+        assertTrue(state.notifications.any { it.txId == settled.id && it.title == "Top up berhasil" })
+    }
+
+    @Test
+    fun topupQrisLifecycle() {
+        demo()
+        val initialWallet = state.walletBalance
+
+        // 1. Validasi minimal top up Rp10.000
+        assertCode("INVALID") {
+            repo.createTopupQris(5_000L)
+        }
+
+        // 2. Request Top Up QRIS Rp100.000
+        val txQris = repo.createTopupQris(100_000L)
+        assertEquals("pending", txQris.status)
+        assertEquals(TxType.TOPUP, txQris.type)
+        assertEquals("QRIS", txQris.method)
+        assertEquals(100_000L, txQris.amount)
+        assertEquals(TOPUP_FEE, txQris.fee)
+        assertEquals(101_000L, txQris.total)
+        assertTrue(txQris.qrisPayload?.contains(CUST_VA_NUMBER) == true)
+        assertEquals(now + 15 * 60 * 1000L, txQris.expiresAtMs)
+        assertEquals(initialWallet, state.walletBalance)
+
+        // 3. Simulasi pembayaran QRIS selesai
+        val settled = repo.simulateQrisPaymentSuccess(txQris.id)
+        assertEquals("ok", settled.status)
+        assertEquals(initialWallet + 100_000L, state.walletBalance)
+        assertTrue(state.notifications.any { it.txId == settled.id && it.title == "Top up berhasil" })
+    }
+
+    @Test
+    fun bankAccountAddVerificationAndDuplicates() {
+        demo()
+        val initialCount = state.bankAccounts.size
+
+        // 1. Nomor rekening terlalu pendek (< 6 digit)
+        assertCode("INVALID_ACCOUNT") {
+            repo.verifyAndAddBankAccount("BRI", "123")
+        }
+
+        // 2. Duplikasi nomor rekening yang sudah ada
+        val existingNumber = state.bankAccounts.first().number
+        assertCode("DUPLICATE_ACCOUNT") {
+            repo.verifyAndAddBankAccount("BCA", existingNumber, "BUDI SANTOSO")
+        }
+
+        // 3. Nama pemilik rekening tidak sesuai e-KTP
+        assertCode("MISMATCH_NAME") {
+            repo.verifyAndAddBankAccount("BRI", "9876543210", "Ahmad Sudirman")
+        }
+
+        // 4. Sukses menambahkan rekening atas nama e-KTP
+        val newAcc = repo.verifyAndAddBankAccount("BRI", "9876543210", "BUDI SANTOSO")
+        assertEquals("BRI", newAcc.bank)
+        assertEquals("9876543210", newAcc.number)
+        assertEquals("•••• 3210", newAcc.maskedNumber)
+        assertEquals("BRI •••• 3210", newAcc.displayLabel)
+        assertEquals(initialCount + 1, state.bankAccounts.size)
+    }
+
+    @Test
+    fun bankAccountDeletionAndPrimaryReassignment() {
+        demo()
+        val bcaAcc = state.bankAccounts.first()
+        // Tambah rekening kedua
+        val briAcc = repo.verifyAndAddBankAccount("BRI", "5544332211", "BUDI SANTOSO")
+        assertEquals(2, state.bankAccounts.size)
+
+        // Hapus rekening pertama (utama)
+        repo.deleteBankAccount(bcaAcc.id)
+        assertEquals(1, state.bankAccounts.size)
+        // Rekening tersisa otomatis menjadi rekening utama
+        val remaining = state.bankAccounts.first()
+        assertEquals(briAcc.id, remaining.id)
+        assertTrue(remaining.isPrimary)
+    }
+
+    @Test
+    fun autoDebitActivationWithOtp() {
+        demo()
+        val acc = state.bankAccounts.first()
+        assertFalse(acc.isAutoDebitActive)
+
+        // OTP salah
+        assertCode("INVALID_OTP") {
+            repo.toggleAutoDebit(acc.id, "999999")
+        }
+
+        // OTP benar 123456
+        val ok = repo.toggleAutoDebit(acc.id, "123456")
+        assertTrue(ok)
+        val updated = state.bankAccounts.first { it.id == acc.id }
+        assertTrue(updated.isAutoDebitActive)
+    }
+
+    @Test
+    fun withdrawalLifecycleAndFeeDeduction() {
+        demo()
+        val acc = state.bankAccounts.first()
+        val initialWallet = state.walletBalance // Rp1.250.000
+
+        // 1. Validasi minimal penarikan Rp50.000
+        assertCode("INVALID") {
+            repo.requestWithdrawal(20_000L, acc.id)
+        }
+
+        // 2. Rekening tidak ditemukan
+        assertCode("INVALID") {
+            repo.requestWithdrawal(100_000L, "non-existent-id")
+        }
+
+        // 3. Saldo tidak mencukupi (nominal + fee Rp2.500)
+        assertCode("INSUFFICIENT_BALANCE") {
+            repo.requestWithdrawal(initialWallet, acc.id) // Butuh initialWallet + Rp2.500
+        }
+
+        // 4. Penarikan valid Rp200.000 -> saldo terpotong Rp202.500
+        val txWdr = repo.requestWithdrawal(200_000L, acc.id)
+        assertEquals("process", txWdr.status)
+        assertEquals(TxType.WITHDRAW, txWdr.type)
+        assertEquals(-200_000L, txWdr.amount)
+        assertEquals(200_000L, txWdr.subtotal)
+        assertEquals(WITHDRAW_FEE, txWdr.fee)
+        assertEquals(202_500L, txWdr.total)
+        assertEquals(initialWallet - 202_500L, state.walletBalance)
+        assertTrue(state.notifications.any { it.txId == txWdr.id && it.title == "Penarikan dalam proses" })
+
+        // 5. Penarikan selesai diverifikasi
+        val completed = repo.completeWithdrawal(txWdr.id)
+        assertEquals("ok", completed.status)
+        assertTrue(state.notifications.any { it.txId == txWdr.id && it.title == "Penarikan dana berhasil" })
     }
 }

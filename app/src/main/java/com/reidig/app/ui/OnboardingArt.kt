@@ -518,6 +518,26 @@ object PrototypeIcons {
         )
     }
 
+    val QrCode: ImageVector by lazy {
+        tablerVector(
+            "QrCode",
+            listOf(
+                "M4 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z",
+                "M7 7l0 .01",
+                "M14 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z",
+                "M17 7l0 .01",
+                "M4 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z",
+                "M7 17l0 .01",
+                "M14 14l3 0",
+                "M20 14l0 .01",
+                "M14 14l0 3",
+                "M14 20l3 0",
+                "M17 17l3 0",
+                "M20 17l0 3",
+            ),
+        )
+    }
+
     val ArrowRight: ImageVector by lazy {
         tablerVector(
             "ArrowRight",
