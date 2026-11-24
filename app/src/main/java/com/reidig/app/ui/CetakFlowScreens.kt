@@ -8,6 +8,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,6 +46,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -59,6 +63,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import com.reidig.app.R
 import com.reidig.shared.GoldBranch
 import com.reidig.shared.GoldBrand
 import com.reidig.shared.MockRepository
@@ -80,7 +86,7 @@ class CetakFlowDraft {
     var deliveryAddress by mutableStateOf<String?>(null)
     var recipientName by mutableStateOf<String?>(null)
     var recipientPhone by mutableStateOf<String?>(null)
-    var paymentMethod by mutableStateOf<PaymentMethod>(PaymentMethod.WALLET)
+    var paymentMethod by mutableStateOf<PaymentMethod?>(null)
     var orderId by mutableStateOf("")
 
     fun reset(prefillBranchId: String? = null) {
@@ -91,7 +97,7 @@ class CetakFlowDraft {
         deliveryAddress = null
         recipientName = null
         recipientPhone = null
-        paymentMethod = PaymentMethod.WALLET
+        paymentMethod = null
         orderId = ""
     }
 }
@@ -1176,102 +1182,17 @@ private fun CetakMethodCard(
 }
 
 /**
- * Bottom Sheet Drawer Tambah Alamat Pengiriman Cepat.
+ * Komponen Form Tambah Alamat Pengiriman (Screen 42: `42 Alamat · Form` / `addrForm`)
  */
 @Composable
 fun CetakAddAddressSheet(
     onDismiss: () -> Unit,
     onSave: (SavedAddress) -> Unit,
 ) {
-    var label by rememberSaveable { mutableStateOf("Rumah") }
-    var recipientName by rememberSaveable { mutableStateOf("") }
-    var phone by rememberSaveable { mutableStateOf("") }
-    var streetDetails by rememberSaveable { mutableStateOf("") }
-    var city by rememberSaveable { mutableStateOf("Tangerang") }
-    var postalCode by rememberSaveable { mutableStateOf("") }
-
-    val isFormValid = recipientName.isNotBlank() && phone.length >= 10 && streetDetails.isNotBlank()
-
-    GoldinBottomSheet(
-        onDismiss = onDismiss,
-        title = "Tambah alamat pengiriman",
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            FormField(
-                label = "Label alamat",
-                value = label,
-                onValueChange = { label = it },
-                placeholder = "Contoh: Rumah, Kantor",
-            )
-
-            FormField(
-                label = "Nama penerima",
-                value = recipientName,
-                onValueChange = { recipientName = it },
-                placeholder = "Nama lengkap penerima",
-            )
-
-            FormField(
-                label = "Nomor handphone",
-                value = phone,
-                onValueChange = { phone = it.filter { char -> char.isDigit() }.take(14) },
-                placeholder = "Contoh: 081234567890",
-            )
-
-            FormField(
-                label = "Alamat lengkap",
-                value = streetDetails,
-                onValueChange = { streetDetails = it },
-                placeholder = "Nama jalan, nomor rumah, RT/RW",
-            )
-
-            FormField(
-                label = "Kota / Kabupaten",
-                value = city,
-                onValueChange = { city = it },
-                placeholder = "Kota penerima",
-            )
-
-            FormField(
-                label = "Kode pos",
-                value = postalCode,
-                onValueChange = { postalCode = it.filter { char -> char.isDigit() }.take(5) },
-                placeholder = "5 digit kode pos",
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            PrimaryButton(
-                text = "Simpan & gunakan alamat",
-                enabled = isFormValid,
-                onClick = {
-                    val newAddr = SavedAddress(
-                        id = "addr-${System.currentTimeMillis()}",
-                        label = label.ifBlank { "Alamat" },
-                        recipientName = recipientName.trim(),
-                        phoneNumber = phone.trim(),
-                        province = "Banten",
-                        city = city.trim(),
-                        district = "Kelapa Dua",
-                        subDistrict = "Bencongan",
-                        postalCode = postalCode.ifBlank { "15810" },
-                        details = streetDetails.trim(),
-                        isPrimary = false,
-                    )
-                    onSave(newAddr)
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(16.dp))
-        }
-    }
+    CetakAddressFormScreen(
+        onBack = onDismiss,
+        onSave = onSave,
+    )
 }
 
 /**
@@ -1303,13 +1224,13 @@ fun CetakAddAddressSheet(
 fun CetakReviewScreen(
     env: AppEnv,
     onBack: () -> Unit,
-    onSuccess: (orderId: String) -> Unit,
+    onSuccess: (orderId: String, txId: String, paymentMethod: PaymentMethod) -> Unit,
     brand: GoldBrand,
     sizeGrams: Double,
     method: PrintMethod,
     branchId: String?,
     addressId: String?,
-    initialPaymentMethod: PaymentMethod = PaymentMethod.WALLET,
+    initialPaymentMethod: PaymentMethod? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by env.repo.state.collectAsStateWithLifecycle()
@@ -1332,11 +1253,39 @@ fun CetakReviewScreen(
     var showConfirmModal by remember { mutableStateOf(false) }
     var isAgreed by rememberSaveable { mutableStateOf(false) }
     var showPinDialog by remember { mutableStateOf(false) }
+    var isProcessing by remember { mutableStateOf(false) }
 
     val isKasShort = selectedPm == PaymentMethod.WALLET && walletBalance < totalPayment
-    val canFinish = !isKasShort
+    val canFinish = selectedPm != null && !isKasShort
 
-    BackHandler { onBack() }
+    // Efek simulasi loading memproses pesanan cetak (Main.dc.html L3774–3780 · sending)
+    LaunchedEffect(isProcessing) {
+        if (isProcessing) {
+            delay(1400L)
+            try {
+                val createdOrder = env.repo.createPhysicalPrintOrder(
+                    brand = brand,
+                    weightGrams = sizeGrams,
+                    method = method,
+                    branchId = branch?.id,
+                    deliveryAddress = address?.let {
+                        "${it.details}, ${it.subDistrict}, ${it.district}, ${it.city}, ${it.province} ${it.postalCode}"
+                    },
+                    recipientName = address?.recipientName,
+                    recipientPhone = address?.phoneNumber,
+                    paymentMethod = selectedPm ?: PaymentMethod.WALLET,
+                    pin = MockRepository.GOLDIN_DEMO_PIN,
+                )
+                isProcessing = false
+                onSuccess(createdOrder.id, createdOrder.txId ?: "", createdOrder.paymentMethod)
+            } catch (e: Exception) {
+                isProcessing = false
+                env.notify(e.message ?: "Terjadi kesalahan saat memproses pesanan.")
+            }
+        }
+    }
+
+    BackHandler { if (!isProcessing) onBack() }
 
     Column(
         modifier = modifier
@@ -1465,7 +1414,7 @@ fun CetakReviewScreen(
                 }
             }
 
-            // B. Card Pilihan Metode Pembayaran
+            // B. Card Pilihan Metode Pembayaran (Main.dc.html Screen 36 · ctPmItems)
             item(key = "review_payment_methods_card") {
                 Column(
                     modifier = Modifier
@@ -1474,56 +1423,164 @@ fun CetakReviewScreen(
                         .background(Color.White)
                         .border(1.dp, Palette.Line, RoundedCornerShape(GoldinRadius.Xl))
                         .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = "Metode pembayaran",
                         fontFamily = TitleFontFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
+                        lineHeight = 26.sp,
                         color = Palette.Ink,
+                        modifier = Modifier.padding(bottom = 4.dp),
                     )
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(GoldinRadius.Lg))
-                            .border(1.dp, Palette.Line, RoundedCornerShape(GoldinRadius.Lg)),
-                    ) {
-                        // 1. Saldo Kas
-                        PaymentMethodRow(
-                            title = "Saldo Kas",
-                            subtitle = if (walletBalance < totalPayment) "Saldo tidak cukup · ${rupiah(walletBalance)}" else "Saldo ${rupiah(walletBalance)}",
-                            isSubtitleError = walletBalance < totalPayment,
-                            icon = GoldinIcons.Cash,
-                            isSelected = selectedPm == PaymentMethod.WALLET,
-                            onClick = { selectedPm = PaymentMethod.WALLET },
-                        )
+                    // 1. Subheader Saldo
+                    Text(
+                        text = "Saldo",
+                        fontFamily = BodyFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        letterSpacing = 0.5.sp,
+                        color = Palette.InkSecondary,
+                    )
 
-                        HorizontalDivider(thickness = 0.5.dp, color = Palette.Line)
+                    // Saldo Kas Option
+                    val isKasShortItem = walletBalance < totalPayment
+                    PaymentMethodCard(
+                        title = "Saldo Kas",
+                        subtitle = if (isKasShortItem) "Saldo tidak cukup · ${rupiah(walletBalance)}" else "Saldo ${rupiah(walletBalance)}",
+                        isSubtitleError = isKasShortItem,
+                        leadingContent = {
+                            Icon(
+                                imageVector = GoldinIcons.Wallet,
+                                contentDescription = null,
+                                tint = Palette.Primary700,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        isSelected = selectedPm == PaymentMethod.WALLET,
+                        enabled = !isKasShortItem,
+                        onClick = { selectedPm = PaymentMethod.WALLET },
+                    )
 
-                        // 2. Virtual Account
-                        PaymentMethodRow(
-                            title = "Virtual Account",
-                            subtitle = "BCA, BRI, Mandiri, BNI",
-                            isSubtitleError = false,
-                            icon = GoldinIcons.BuildingBank,
-                            isSelected = selectedPm == PaymentMethod.VA_BCA || selectedPm == PaymentMethod.VIRTUAL_ACCOUNT,
-                            onClick = { selectedPm = PaymentMethod.VA_BCA },
-                        )
+                    // Hairline divider
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = Palette.Line,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
 
-                        HorizontalDivider(thickness = 0.5.dp, color = Palette.Line)
+                    // 2. Subheader Virtual Account
+                    Text(
+                        text = "Virtual Account",
+                        fontFamily = BodyFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        letterSpacing = 0.5.sp,
+                        color = Palette.InkSecondary,
+                    )
 
-                        // 3. QRIS
-                        PaymentMethodRow(
-                            title = "QRIS",
-                            subtitle = "ShopeePay, GoPay, OVO, Dana",
-                            isSubtitleError = false,
-                            icon = GoldinIcons.Receipt,
-                            isSelected = selectedPm == PaymentMethod.QRIS,
-                            onClick = { selectedPm = PaymentMethod.QRIS },
-                        )
-                    }
+                    // 4 VA Bank Cards (BCA, BRI, Mandiri, BNI)
+                    PaymentMethodCard(
+                        title = "BCA Virtual Account",
+                        leadingContent = {
+                            Image(
+                                painter = painterResource(R.drawable.logo_bca),
+                                contentDescription = "BCA",
+                                modifier = Modifier
+                                    .heightIn(max = 24.dp)
+                                    .fillMaxWidth(),
+                                contentScale = ContentScale.Fit,
+                            )
+                        },
+                        isSelected = selectedPm == PaymentMethod.VA_BCA,
+                        onClick = { selectedPm = PaymentMethod.VA_BCA },
+                    )
+
+                    PaymentMethodCard(
+                        title = "BRI Virtual Account",
+                        leadingContent = {
+                            Image(
+                                painter = painterResource(R.drawable.logo_bri),
+                                contentDescription = "BRI",
+                                modifier = Modifier
+                                    .heightIn(max = 24.dp)
+                                    .fillMaxWidth(),
+                                contentScale = ContentScale.Fit,
+                            )
+                        },
+                        isSelected = selectedPm == PaymentMethod.VA_BRI,
+                        onClick = { selectedPm = PaymentMethod.VA_BRI },
+                    )
+
+                    PaymentMethodCard(
+                        title = "Mandiri Virtual Account",
+                        leadingContent = {
+                            Image(
+                                painter = painterResource(R.drawable.logo_mandiri),
+                                contentDescription = "Mandiri",
+                                modifier = Modifier
+                                    .heightIn(max = 24.dp)
+                                    .fillMaxWidth(),
+                                contentScale = ContentScale.Fit,
+                            )
+                        },
+                        isSelected = selectedPm == PaymentMethod.VA_MANDIRI,
+                        onClick = { selectedPm = PaymentMethod.VA_MANDIRI },
+                    )
+
+                    PaymentMethodCard(
+                        title = "BNI Virtual Account",
+                        leadingContent = {
+                            Image(
+                                painter = painterResource(R.drawable.logo_bni),
+                                contentDescription = "BNI",
+                                modifier = Modifier
+                                    .heightIn(max = 24.dp)
+                                    .fillMaxWidth(),
+                                contentScale = ContentScale.Fit,
+                            )
+                        },
+                        isSelected = selectedPm == PaymentMethod.VA_BNI,
+                        onClick = { selectedPm = PaymentMethod.VA_BNI },
+                    )
+
+                    // Hairline divider
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = Palette.Line,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+
+                    // 3. Subheader QRIS
+                    Text(
+                        text = "QRIS",
+                        fontFamily = BodyFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        letterSpacing = 0.5.sp,
+                        color = Palette.InkSecondary,
+                    )
+
+                    PaymentMethodCard(
+                        title = "QRIS",
+                        leadingContent = {
+                            Image(
+                                painter = painterResource(R.drawable.logo_qris),
+                                contentDescription = "QRIS",
+                                modifier = Modifier
+                                    .heightIn(max = 24.dp)
+                                    .fillMaxWidth(),
+                                contentScale = ContentScale.Fit,
+                            )
+                        },
+                        isSelected = selectedPm == PaymentMethod.QRIS,
+                        onClick = { selectedPm = PaymentMethod.QRIS },
+                    )
                 }
             }
         }
@@ -1566,8 +1623,9 @@ fun CetakReviewScreen(
                         .weight(1f)
                         .height(44.dp)
                         .clip(RoundedCornerShape(GoldinRadius.Full))
-                        .background(if (canFinish) Palette.Primary700 else Palette.Neutral300)
+                        .background(if (canFinish) Palette.Primary700 else Palette.Primary700.copy(alpha = 0.4f))
                         .clickable(enabled = canFinish) {
+                            isAgreed = false
                             showConfirmModal = true
                         },
                     contentAlignment = Alignment.Center,
@@ -1577,7 +1635,7 @@ fun CetakReviewScreen(
                         fontFamily = BodyFontFamily,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
-                        color = if (canFinish) Palette.Primary50 else Palette.InkSoft,
+                        color = Color.White,
                     )
                 }
             }
@@ -1590,7 +1648,7 @@ fun CetakReviewScreen(
         GoldinModal(
             title = "Konfirmasi pesanan",
             message = "Pesanan tidak bisa dibatalkan dan $destinationLabel tidak bisa diganti setelah dikonfirmasi.",
-            checkboxLabel = "Saya mengerti dan setuju bahwa saldo emas saya akan langsung dipotong sebesar ${formatGrams4(sizeGrams)} untuk mencetak keping fisik ini.",
+            checkboxLabel = "Saya mengerti dan setuju.",
             checkboxChecked = isAgreed,
             onCheckboxChange = { isAgreed = it },
             confirmLabel = "Cetak emas",
@@ -1616,22 +1674,57 @@ fun CetakReviewScreen(
             onDismiss = { showPinDialog = false },
             onVerified = {
                 showPinDialog = false
-                val createdOrder = env.repo.createPhysicalPrintOrder(
-                    brand = brand,
-                    weightGrams = sizeGrams,
-                    method = method,
-                    branchId = branch?.id,
-                    deliveryAddress = address?.let {
-                        "${it.details}, ${it.subDistrict}, ${it.district}, ${it.city}, ${it.province} ${it.postalCode}"
-                    },
-                    recipientName = address?.recipientName,
-                    recipientPhone = address?.phoneNumber,
-                    paymentMethod = selectedPm,
-                    pin = MockRepository.GOLDIN_DEMO_PIN,
-                )
-                onSuccess(createdOrder.id)
+                isProcessing = true
             },
         )
+    }
+
+    // 7. Layar Penuh "Memproses pesanan cetak..." (Main.dc.html L3069–3075 & Handoff §12)
+    if (isProcessing) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(horizontal = 40.dp),
+            ) {
+                // Spinner Tabler loader-2 memutar tak terbatas
+                GoldinSpinner(
+                    size = 40.dp,
+                    color = Palette.Primary700,
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                Text(
+                    text = "Memproses pesanan cetak...",
+                    fontFamily = BodyFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    color = Palette.Ink,
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(Modifier.height(6.dp))
+
+                Text(
+                    text = "Jangan tutup aplikasi sampai proses selesai.",
+                    fontFamily = BodyFontFamily,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = Palette.InkSecondary,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
     }
 }
 
@@ -1669,68 +1762,79 @@ private fun ReviewDetailRow(
 }
 
 /**
- * Baris pilihan metode pembayaran rupiah pada Stepper 3.
+ * Kartu pilihan metode pembayaran rupiah pada Stepper 3 (Main.dc.html Screen 36 · ctPmItems).
  */
 @Composable
-private fun PaymentMethodRow(
+private fun PaymentMethodCard(
     title: String,
-    subtitle: String,
-    isSubtitleError: Boolean,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    subtitle: String? = null,
+    isSubtitleError: Boolean = false,
+    leadingContent: @Composable () -> Unit,
     isSelected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val borderColor = if (isSelected) Palette.Primary700 else Palette.Line
+    val bgColor = if (isSelected) Palette.Primary50 else Color.White
+    val alpha = if (enabled) 1f else 0.6f
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .background(if (isSelected) Palette.Primary50 else Color.White)
-            .padding(14.dp),
+            .heightIn(min = 56.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .alpha(alpha),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Icon circular badge
+        // Leading slot: 72x40dp box
         Box(
             modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(Palette.Primary100),
+                .width(72.dp)
+                .height(40.dp)
+                .padding(horizontal = 6.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = Palette.Primary700,
-                modifier = Modifier.size(20.dp),
-            )
+            leadingContent()
         }
 
-        // Title and Subtitle
-        Column(modifier = Modifier.weight(1f)) {
+        // Title and optional subtitle
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+        ) {
             Text(
                 text = title,
                 fontFamily = BodyFontFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
+                lineHeight = 20.sp,
                 color = Palette.Ink,
             )
-            Text(
-                text = subtitle,
-                fontFamily = BodyFontFamily,
-                fontSize = 12.sp,
-                color = if (isSubtitleError) Palette.Critical else Palette.InkSecondary,
-            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    fontFamily = BodyFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    letterSpacing = 0.5.sp,
+                    color = if (isSubtitleError) Palette.Critical else Palette.InkSecondary,
+                )
+            }
         }
 
-        // Radio Button Indicator
+        // Radio indicator: 20dp outer circle with 10dp inner dot when selected
         Box(
             modifier = Modifier
                 .size(20.dp)
-                .clip(CircleShape)
                 .border(
                     width = 1.dp,
-                    color = if (isSelected) Palette.Primary700 else Palette.Neutral300,
+                    color = if (isSelected) Palette.Primary700 else Palette.Line,
                     shape = CircleShape,
                 ),
             contentAlignment = Alignment.Center,

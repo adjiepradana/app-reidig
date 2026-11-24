@@ -898,6 +898,31 @@ class MockRepository(
             executedAtMs = now + 4000L,
             settledAtMs = now + 120_000L,
         )
+
+        // Khusus transaksi Pesanan Cetak Fisik
+        val matchingCetak = state.physicalOrders.firstOrNull { it.txId == tx.id }
+        if (matchingCetak != null) {
+            val updatedOrder = matchingCetak.copy(status = PhysicalOrderStatus.READY_PICKUP)
+            val notif = NotificationItem(
+                id = nextId("notif"),
+                category = NotificationCategory.TRANSACTION,
+                title = "Pesanan cetak emas dibayar",
+                message = "Pembayaran cetak emas ${matchingCetak.brand.displayName} ${formatGrams4(matchingCetak.weightGrams)} gr berhasil diterima.",
+                atMs = now,
+                isRead = false,
+                txId = tx.id,
+            )
+            _state.update { s ->
+                s.copy(
+                    goldBalanceGrams = floorGrams4((s.goldBalanceGrams - matchingCetak.weightGrams).coerceAtLeast(0.0)),
+                    physicalOrders = s.physicalOrders.map { if (it.id == matchingCetak.id) updatedOrder else it },
+                    transactions = s.transactions.map { if (it.id == txId) completedTx else it },
+                    notifications = listOf(notif) + s.notifications,
+                )
+            }
+            return completedTx
+        }
+
         val notif = NotificationItem(
             id = nextId("notif"),
             category = NotificationCategory.TRANSACTION,
@@ -2027,36 +2052,59 @@ class MockRepository(
         if (s.freeGoldGrams < weightGrams) fail("INSUFFICIENT_GOLD", "Saldo emas bebas tidak mencukupi untuk cetak.")
         if (!verifyPin(pin)) fail("WRONG_PIN", "PIN salah. Coba lagi.")
 
+        val isKas = paymentMethod == PaymentMethod.WALLET
         val isBranch = method == PrintMethod.BRANCH
         val branch = if (isBranch) getGoldBranch(branchId ?: "kwc") ?: officialGoldBranches.first() else null
         val printFee = 50_000L
         val shippingFee = if (isBranch) 0L else 35_000L
         val totalFee = printFee + shippingFee
 
-        if (paymentMethod == PaymentMethod.WALLET && s.walletBalance < totalFee) {
+        if (isKas && s.walletBalance < totalFee) {
             fail("INSUFFICIENT_BALANCE", "Saldo Kas tidak cukup untuk membayar biaya cetak.")
         }
 
         val now = clock()
-        val orderId = nextId("CTK")
+        val ymd = formatYmd(now).replace("-", "")
+        val hexSuffix = ((now / 1000L % 9000L) + 1000L).toString()
+        val orderCode = "CTK-$ymd-$hexSuffix"
+        val orderId = orderCode
         val serialNumber = brand.serialPrefix + "-" + ((serialCounter++) % 9000000 + 1000000)
-        val ticketCode = "TKT-REI-" + ((serialCounter * 3) % 900000 + 100000)
+        val ticketCode = orderCode
         val qrPayload = "GOLDIN:PRINT:$orderId:$ticketCode"
         val trackingNumber = if (!isBranch) "RE" + ((serialCounter * 7) % 9000000000L + 1000000000L) else null
+
+        val vaNumber = when (paymentMethod) {
+            PaymentMethod.VA_BCA -> "3935 8019 2498 2261"
+            PaymentMethod.VA_BRI -> "8801 9249 8226 1234"
+            PaymentMethod.VA_MANDIRI -> "8902 2498 2261 4567"
+            PaymentMethod.VA_BNI -> "9882 4982 2614 7890"
+            else -> "3935 8019 2498 2261"
+        }
 
         val tx = Tx(
             id = nextId("TX"),
             type = TxType.WITHDRAW,
             title = "Cetak emas ${brand.displayName} ${formatGrams4(weightGrams)} gr",
-            amount = if (paymentMethod == PaymentMethod.WALLET) -totalFee else 0L,
+            amount = if (isKas) -totalFee else 0L,
             atMs = now,
+            status = if (isKas) "ok" else "pending",
+            method = paymentMethod.label,
+            paymentMethod = paymentMethod,
+            grams = weightGrams,
+            subtotal = printFee,
+            fee = shippingFee,
+            total = totalFee,
+            expiresAtMs = if (!isKas) now + 15 * 60 * 1000L else null,
+            virtualAccountNumber = if (paymentMethod.isVa) vaNumber else null,
+            brand = brand.displayName,
+            destination = if (isBranch) (branch?.name ?: "Raja Emas BSD") else deliveryAddress,
         )
 
         val notif = NotificationItem(
             id = nextId("NOTIF"),
             category = NotificationCategory.TRANSACTION,
-            title = "Pesanan cetak emas dibuat",
-            message = "Pesanan cetak ${brand.displayName} ${formatGrams4(weightGrams)} gr berhasil dibuat.",
+            title = if (isKas) "Pesanan cetak emas dibuat" else "Menunggu pembayaran cetak emas",
+            message = if (isKas) "Pesanan cetak ${brand.displayName} ${formatGrams4(weightGrams)} gr berhasil dibuat." else "Selesaikan pembayaran biaya cetak ${brand.displayName} sebelum batas waktu.",
             atMs = now,
             txId = tx.id,
         )
@@ -2069,12 +2117,12 @@ class MockRepository(
             quantity = 1,
             method = method,
             branchId = branch?.id,
-            branchName = branch?.name,
+            branchName = branch?.name ?: if (isBranch) "Raja Emas BSD" else null,
             branchAddress = branch?.address,
             destinationAddress = deliveryAddress,
             recipientName = recipientName ?: s.user?.name,
             recipientPhone = recipientPhone ?: s.user?.phone,
-            status = PhysicalOrderStatus.CREATED,
+            status = if (isKas) PhysicalOrderStatus.READY_PICKUP else PhysicalOrderStatus.CREATED,
             ticketCode = ticketCode,
             qrCodePayload = qrPayload,
             printFee = printFee,
@@ -2091,8 +2139,8 @@ class MockRepository(
 
         _state.update { curr ->
             curr.copy(
-                goldBalanceGrams = floorGrams4((curr.goldBalanceGrams - weightGrams).coerceAtLeast(0.0)),
-                walletBalance = if (paymentMethod == PaymentMethod.WALLET) curr.walletBalance - totalFee else curr.walletBalance,
+                goldBalanceGrams = if (isKas) floorGrams4((curr.goldBalanceGrams - weightGrams).coerceAtLeast(0.0)) else curr.goldBalanceGrams,
+                walletBalance = if (isKas) curr.walletBalance - totalFee else curr.walletBalance,
                 physicalOrders = listOf(order) + curr.physicalOrders,
                 transactions = listOf(tx) + curr.transactions,
                 notifications = listOf(notif) + curr.notifications,

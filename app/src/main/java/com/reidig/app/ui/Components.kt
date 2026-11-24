@@ -2820,16 +2820,32 @@ private fun GoldinMessageContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
                     .clickable { onCheckboxChange(!checkboxChecked) }
                     .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.Top,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Checkbox(
-                    checked = checkboxChecked,
-                    onCheckedChange = onCheckboxChange,
-                    colors = CheckboxDefaults.colors(checkedColor = Palette.Primary700, uncheckedColor = Palette.Line),
-                    modifier = Modifier.size(20.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (checkboxChecked) Palette.Primary700 else Color.Transparent)
+                        .border(
+                            width = 1.5.dp,
+                            color = if (checkboxChecked) Palette.Primary700 else Palette.Line,
+                            shape = RoundedCornerShape(4.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (checkboxChecked) {
+                        Icon(
+                            imageVector = PrototypeIcons.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.width(GoldinSpace.Sm))
                 Text(
                     text = checkboxLabel,
@@ -2908,7 +2924,7 @@ fun GoldinModal(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Palette.Scrim.copy(alpha = 0.4f * alpha.value))
-                .padding(horizontal = GoldinSpace.Lg),
+                .padding(horizontal = GoldinSpace.Xl),
             contentAlignment = Alignment.Center,
         ) {
             Box(

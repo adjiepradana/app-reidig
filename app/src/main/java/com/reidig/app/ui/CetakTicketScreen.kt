@@ -169,12 +169,13 @@ fun CetakTicketScreen(
                         }
 
                         // Kode Tiket Mono & Tombol Salin
+                        val displayCode = order.orderNumber.ifBlank { order.ticketCode.ifBlank { order.id } }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
                         ) {
                             Text(
-                                text = order.ticketCode,
+                                text = displayCode,
                                 fontFamily = MonoFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
@@ -188,8 +189,8 @@ fun CetakTicketScreen(
                                     .size(36.dp)
                                     .clip(CircleShape)
                                     .clickable {
-                                        clipboardManager.setText(AnnotatedString(order.ticketCode))
-                                        env.notify("Kode tiket disalin")
+                                        clipboardManager.setText(AnnotatedString(displayCode))
+                                        env.notify("Kode pesanan disalin")
                                     },
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -209,33 +210,7 @@ fun CetakTicketScreen(
                             fontSize = 12.sp,
                             color = Palette.InkSecondary,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = (-4).dp),
                         )
-
-                        // Badge Pengingat e-KTP Fisik
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(GoldinRadius.Md))
-                                .background(Palette.Info50)
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            Icon(
-                                imageVector = GoldinIcons.InfoCircle,
-                                contentDescription = null,
-                                tint = Palette.Info700,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Bawa e-KTP fisik asli saat pengambilan di cabang.",
-                                fontFamily = BodyFontFamily,
-                                fontSize = 11.sp,
-                                color = Palette.Info700,
-                            )
-                        }
 
                         // Reservasi / Atur Jadwal Ambil
                         if (order.pickupScheduleDate.isNullOrBlank()) {
@@ -381,7 +356,7 @@ fun CetakTicketScreen(
 
                     Column(modifier = Modifier.fillMaxWidth()) {
                         timelineSteps.forEachIndexed { index, step ->
-                            val isStepDone = if (order.status.isDone) true else index <= currentStageIndex
+                            val isStepDone = if (order.status.isDone) true else index < currentStageIndex
                             val isCurrent = index == currentStageIndex && !order.status.isDone
                             val isLast = index == timelineSteps.size - 1
 

@@ -21,6 +21,7 @@ enum class PaymentMethod(
     val isWallet: Boolean get() = this == WALLET
     val isQris: Boolean get() = this == QRIS
     val isCicil: Boolean get() = this == CICILAN
+    val displayName: String get() = label
 
     companion object {
         fun fromKey(key: String): PaymentMethod = values().firstOrNull { it.key == key } ?: WALLET
@@ -539,6 +540,10 @@ enum class PhysicalOrderStatus(val label: String) {
 
     val isDone: Boolean get() = this == DONE || this == DELIVERED
     val isReadyPickup: Boolean get() = this == READY_PICKUP
+
+    companion object {
+        val READY_FOR_PICKUP get() = READY_PICKUP
+    }
 }
 
 data class GoldBranch(

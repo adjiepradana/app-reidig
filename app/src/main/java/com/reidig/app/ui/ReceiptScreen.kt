@@ -40,8 +40,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.reidig.shared.PhysicalOrderStatus
+import com.reidig.shared.Tx
 import com.reidig.shared.TxType
 import com.reidig.shared.formatGrams4
+import com.reidig.shared.formatNumberOnly
 import com.reidig.shared.rupiah
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,7 +71,32 @@ fun ReceiptScreen(
     val scrollState = rememberScrollState()
     val clipboardManager = LocalClipboardManager.current
 
+    val matchingCetak = remember(txId, state.physicalOrders) {
+        state.physicalOrders.firstOrNull { it.id == txId || it.orderNumber == txId || it.txId == txId }
+    }
+
     val tx = state.transactions.firstOrNull { it.id == txId }
+        ?: state.transactions.firstOrNull { t ->
+            state.physicalOrders.any { o -> (o.id == txId || o.orderNumber == txId) && o.txId == t.id }
+        }
+        ?: matchingCetak?.let { order ->
+            Tx(
+                id = order.txId ?: ("TX-" + order.id),
+                type = TxType.WITHDRAW,
+                title = "Cetak emas ${order.brand.displayName} ${formatGrams4(order.weightGrams)}",
+                amount = -order.totalPayment,
+                atMs = order.createdAtMs,
+                status = if (order.status == PhysicalOrderStatus.WAITING_PAYMENT) "pending" else "ok",
+                method = order.paymentMethod.displayName,
+                paymentMethod = order.paymentMethod,
+                grams = order.weightGrams,
+                subtotal = order.printFee,
+                fee = order.shippingInsuranceFee,
+                total = order.totalPayment,
+                brand = order.brand.displayName,
+                destination = order.branchName ?: order.destinationAddress,
+            )
+        }
 
     if (tx == null) {
         LaunchedEffect(Unit) {
@@ -84,7 +112,7 @@ fun ReceiptScreen(
     val isPending = tx.status == "pending" || tx.status == "process"
 
     val formattedFullTime = remember(tx.atMs) {
-        val sdf = SimpleDateFormat("d MMMM yyyy, HH.mm 'WIB'", Locale("id", "ID"))
+        val sdf = SimpleDateFormat("d MMM yyyy, HH.mm 'WIB'", Locale("id", "ID"))
         sdf.format(Date(tx.atMs))
     }
 
@@ -124,6 +152,7 @@ fun ReceiptScreen(
                 ) {
                     // 2.1 Status Header Struk
                     val (statusBg, statusFg, statusIcon, statusLabel) = when {
+                        matchingCetak != null -> Quadruple(Palette.WarnSoft, Palette.Warn, PrototypeIcons.Clock, "Diproses")
                         isOk -> Quadruple(Palette.GoodSoft, Palette.Good, PrototypeIcons.Check, "Transaksi Berhasil")
                         isPending -> Quadruple(Palette.WarnSoft, Palette.Warn, PrototypeIcons.Clock, "Menunggu Pembayaran")
                         else -> Quadruple(Palette.CriticalSoft, Palette.Critical, PrototypeIcons.XClose, "Transaksi Gagal")
@@ -160,7 +189,7 @@ fun ReceiptScreen(
                         )
 
                         Text(
-                            text = rupiah(tx.effectiveTotal),
+                            text = if (matchingCetak != null) "${if (matchingCetak.weightGrams % 1.0 == 0.0) matchingCetak.weightGrams.toInt() else matchingCetak.weightGrams} gr" else rupiah(tx.effectiveTotal),
                             fontFamily = MonoFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 24.sp,
@@ -168,7 +197,9 @@ fun ReceiptScreen(
                             color = Palette.Ink,
                         )
 
-                        val subDetail = if (tx.grams > 0.0) {
+                        val subDetail = if (matchingCetak != null) {
+                            "Cetak emas · ${rupiah(matchingCetak.totalPayment)}"
+                        } else if (tx.grams > 0.0) {
                             "${tx.title} ${formatGrams4(tx.grams)}"
                         } else tx.title
 
@@ -194,14 +225,40 @@ fun ReceiptScreen(
                             lineHeight = 26.sp,
                             color = Palette.Ink,
                         )
-                        ReceiptDetailRow("Waktu transaksi", formattedFullTime)
-                        ReceiptDetailRow("Nomor order", tx.id)
-                        ReceiptDetailRow("Jenis transaksi", tx.type.label)
-                        ReceiptDetailRow("Metode pembayaran", tx.method.ifBlank { "Saldo Kas" })
+                        if (matchingCetak != null) {
+                            ReceiptDetailRow("No. order", matchingCetak.orderNumber)
+                            ReceiptDetailRow("Metode pembayaran", matchingCetak.paymentMethod.displayName)
+                            ReceiptDetailRow("Pengambilan", if (matchingCetak.isPickup) "Ambil di cabang" else "Dikirim ke alamat")
+                            if (matchingCetak.isPickup) {
+                                ReceiptDetailRow("Cabang", matchingCetak.branchName ?: "Raja Emas BSD")
+                            } else {
+                                ReceiptDetailRow("Dikirim ke", matchingCetak.destinationAddress ?: "–")
+                            }
+                            ReceiptDetailRow("Order dibuat", formattedFullTime)
+                        } else {
+                            ReceiptDetailRow("Waktu transaksi", formattedFullTime)
+                            ReceiptDetailRow("Nomor order", tx.id)
+                            ReceiptDetailRow("Jenis transaksi", tx.type.label)
+                            ReceiptDetailRow("Metode pembayaran", tx.method.ifBlank { "Saldo Kas" })
+                        }
                     }
 
-                    // 2.3 Detail Emas (Jika ada gramatur)
-                    if (tx.grams > 0.0) {
+                    // 2.3 Detail Emas
+                    if (matchingCetak != null) {
+                        ReceiptDashedDivider()
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "Detail emas",
+                                fontFamily = TitleFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                lineHeight = 26.sp,
+                                color = Palette.Ink,
+                            )
+                            ReceiptDetailRow("Brand", matchingCetak.brand.displayName)
+                            ReceiptDetailRow("Berat emas", "${if (matchingCetak.weightGrams % 1.0 == 0.0) matchingCetak.weightGrams.toInt() else matchingCetak.weightGrams} gr")
+                        }
+                    } else if (tx.grams > 0.0) {
                         ReceiptDashedDivider()
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
@@ -221,16 +278,23 @@ fun ReceiptScreen(
                     ReceiptDashedDivider()
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            text = if (isBuy) "Rincian pembayaran" else "Rincian penjualan",
+                            text = if (matchingCetak != null) "Rincian (Rp)" else if (isBuy) "Rincian pembayaran" else "Rincian penjualan",
                             fontFamily = TitleFontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             lineHeight = 26.sp,
                             color = Palette.Ink,
                         )
-                        ReceiptDetailRow("Subtotal", rupiah(tx.effectiveSubtotal))
-                        ReceiptDetailRow("Biaya admin", if (isBuy) rupiah(tx.fee) else "- ${rupiah(tx.fee)}")
-                        ReceiptDetailRow("Pajak PPh 22 (0,25%)", if (isBuy) rupiah(tx.tax) else "- ${rupiah(tx.tax)}")
+                        if (matchingCetak != null) {
+                            ReceiptDetailRow("Biaya cetak", formatNumberOnly(matchingCetak.printFee))
+                            if (!matchingCetak.isPickup) {
+                                ReceiptDetailRow("Ongkir & asuransi", formatNumberOnly(matchingCetak.shippingInsuranceFee))
+                            }
+                        } else {
+                            ReceiptDetailRow("Subtotal", rupiah(tx.effectiveSubtotal))
+                            ReceiptDetailRow("Biaya admin", if (isBuy) rupiah(tx.fee) else "- ${rupiah(tx.fee)}")
+                            ReceiptDetailRow("Pajak PPh 22 (0,25%)", if (isBuy) rupiah(tx.tax) else "- ${rupiah(tx.tax)}")
+                        }
 
                         ReceiptDashedDivider()
 
@@ -240,7 +304,7 @@ fun ReceiptScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = if (isBuy) "Total pembayaran" else "Total dana diterima",
+                                text = if (matchingCetak != null) "Total" else if (isBuy) "Total pembayaran" else "Total dana diterima",
                                 fontFamily = BodyFontFamily,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 16.sp,
@@ -248,7 +312,7 @@ fun ReceiptScreen(
                                 color = Palette.Ink,
                             )
                             Text(
-                                text = rupiah(tx.effectiveTotal),
+                                text = if (matchingCetak != null) rupiah(matchingCetak.totalPayment) else rupiah(tx.effectiveTotal),
                                 fontFamily = MonoFontFamily,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 18.sp,
@@ -259,7 +323,7 @@ fun ReceiptScreen(
                     }
 
                     // 2.5 Bukti Pencatatan Resmi Bursa & Kliring (`Main.dc.html` L1888–1898)
-                    if (isOk && tx.isTrade) {
+                    if (isOk && tx.isTrade && matchingCetak == null) {
                         ReceiptDashedDivider()
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -380,7 +444,7 @@ fun ReceiptScreen(
                 }
 
                 // 3. Info Biru jika Pending/Gagal (`Main.dc.html` L1900–1902)
-                if (!isOk) {
+                if (!isOk && matchingCetak == null) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

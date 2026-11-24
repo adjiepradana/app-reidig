@@ -193,6 +193,7 @@ object Palette {
     val Bad = Critical
     val BadSoft = CriticalSoft
     val Neutral300 = Line
+    val Neutral400 = Disabled
     val Neutral500 = InkSoft
     val Neutral600 = InkSecondary
     val PrimaryPressed = Primary800

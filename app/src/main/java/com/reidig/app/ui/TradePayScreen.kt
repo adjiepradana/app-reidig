@@ -91,9 +91,16 @@ fun TradePayScreen(
         return
     }
 
+    // Status loading & navigasi aman
+    var isCheckingStatus by remember { mutableStateOf(false) }
+    var hasNavigated by remember { mutableStateOf(false) }
+
     // Jika transaksi sudah selesai, langsung arahkan ke selesai
-    if (tx.status == "ok") {
-        LaunchedEffect(Unit) { onDone(tx.id) }
+    if (tx.status == "ok" && !isCheckingStatus && !hasNavigated) {
+        LaunchedEffect(Unit) {
+            hasNavigated = true
+            onDone(tx.id)
+        }
         Box(Modifier.fillMaxSize().background(Palette.Paper))
         return
     }
@@ -124,9 +131,6 @@ fun TradePayScreen(
         val sdf = SimpleDateFormat("d MMM yyyy, HH.mm 'WIB'", Locale("id", "ID"))
         sdf.format(Date(expiresAt))
     }
-
-    // Status loading saat cek status
-    var isCheckingStatus by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -239,7 +243,7 @@ fun TradePayScreen(
                         }
 
                         // Baris Nomor VA
-                        val rawVa = tx.virtualAccountNumber ?: "3935800000000000"
+                        val rawVa = tx.virtualAccountNumber?.replace(" ", "") ?: "3935801924982261"
                         val formattedVa = formatVaWithSpaces(rawVa)
 
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -383,42 +387,59 @@ fun TradePayScreen(
                                 fontSize = 14.sp,
                                 color = Palette.InkSecondary,
                             )
-                            Text(
-                                text = rupiah(tx.effectiveTotal),
-                                fontFamily = MonoFontFamily,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 18.sp,
-                                lineHeight = 26.sp,
-                                color = Palette.Primary700,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = rupiah(tx.effectiveTotal),
+                                    fontFamily = MonoFontFamily,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 18.sp,
+                                    lineHeight = 26.sp,
+                                    color = Palette.Primary700,
+                                )
+                                GoldinIconButton(
+                                    icon = PrototypeIcons.Copy,
+                                    contentDescription = "Salin total pembayaran",
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(tx.effectiveTotal.toString()))
+                                        env.notify("Total pembayaran disalin")
+                                    },
+                                    tint = Palette.Primary700,
+                                    hoverColor = Palette.Primary50,
+                                )
+                            }
                         }
                     }
                 }
 
-                // 4. Catatan Info Biru Harga Emas Terkunci (`Main.dc.html` L1724–1727)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Palette.Info50)
-                        .border(1.dp, Palette.Info200, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Icon(
-                        imageVector = PrototypeIcons.Lock,
-                        contentDescription = null,
-                        tint = Palette.Info700,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Text(
-                        text = "Harga emas terkunci di ${rupiah(tx.pricePerGram)}. Segera selesaikan pembayaran untuk tetap mendapatkan harga ini.",
-                        fontFamily = BodyFontFamily,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        color = Palette.InkSecondary,
-                    )
+                // 4. Catatan Info Biru Harga Emas Terkunci (`Main.dc.html` L1724–1727) - Hanya untuk Beli/Jual
+                if (tx.isTrade && tx.pricePerGram > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Palette.Info50)
+                            .border(1.dp, Palette.Info200, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = PrototypeIcons.Lock,
+                            contentDescription = null,
+                            tint = Palette.Info700,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text(
+                            text = "Harga emas terkunci di ${rupiah(tx.pricePerGram)}. Segera selesaikan pembayaran untuk tetap mendapatkan harga ini.",
+                            fontFamily = BodyFontFamily,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            color = Palette.InkSecondary,
+                        )
+                    }
                 }
             }
 
@@ -437,13 +458,14 @@ fun TradePayScreen(
                     loading = isCheckingStatus,
                     loadingText = "Memeriksa pembayaran…",
                     onClick = {
-                        if (!isCheckingStatus) {
+                        if (!isCheckingStatus && !hasNavigated) {
                             isCheckingStatus = true
                             scope.launch {
                                 delay(800L) // simulasi request jaringan
                                 try {
                                     val completed = env.repo.confirmTradePayment(tx.id)
                                     isCheckingStatus = false
+                                    hasNavigated = true
                                     onDone(completed.id)
                                 } catch (e: Exception) {
                                     isCheckingStatus = false
@@ -455,24 +477,26 @@ fun TradePayScreen(
                     height = 44.dp,
                 )
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(36.dp)
-                        .clickable {
-                            env.repo.cancelTradeOrder(tx.id)
-                            env.notify("Pesanan dibatalkan")
-                            onCancelOrder()
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "Batalkan pesanan",
-                        fontFamily = BodyFontFamily,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Palette.InkSecondary,
-                    )
+                if (tx.isTrade) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
+                            .clickable {
+                                env.repo.cancelTradeOrder(tx.id)
+                                env.notify("Pesanan dibatalkan")
+                                onCancelOrder()
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "Batalkan pesanan",
+                            fontFamily = BodyFontFamily,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Palette.InkSecondary,
+                        )
+                    }
                 }
             }
         }

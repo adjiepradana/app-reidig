@@ -59,6 +59,7 @@ import com.reidig.shared.GoldToken
 import com.reidig.shared.InstallmentApplication
 import com.reidig.shared.InstallmentContract
 import com.reidig.shared.MockRepository
+import com.reidig.shared.PaymentMethod
 import com.reidig.shared.PrintMethod
 import com.reidig.shared.PrintOrder
 import com.reidig.shared.gram
@@ -755,8 +756,19 @@ fun ReidigApp(repo: MockRepository) {
                         txId = txId,
                         onBack = { nav.popBackStack() },
                         onDone = { completedTxId ->
-                            nav.navigate("trade/done/$completedTxId") {
-                                popUpTo("catalog")
+                            val currentOrders = repo.state.value.physicalOrders
+                            val matchingOrder = currentOrders.firstOrNull {
+                                it.txId == completedTxId || it.id == completedTxId || it.orderNumber == completedTxId
+                            }
+                            if (matchingOrder != null) {
+                                cetakFlow.orderId = matchingOrder.id
+                                nav.navigate("cetak/ticket/${matchingOrder.id}") {
+                                    popUpTo("trade/pay/{txId}") { inclusive = true }
+                                }
+                            } else {
+                                nav.navigate("trade/done/$completedTxId") {
+                                    popUpTo("trade/pay/{txId}") { inclusive = true }
+                                }
                             }
                         },
                         onCancelOrder = { nav.popBackStack() },
@@ -893,6 +905,24 @@ fun ReidigApp(repo: MockRepository) {
                         }?.id,
                     )
                 }
+                composable("cetak/address/add") {
+                    CetakAddressFormScreen(
+                        onBack = { nav.popBackStack() },
+                        onSave = { newAddress ->
+                            repo.addSavedAddress(newAddress)
+                            nav.popBackStack()
+                        },
+                    )
+                }
+                composable("addrForm") {
+                    CetakAddressFormScreen(
+                        onBack = { nav.popBackStack() },
+                        onSave = { newAddress ->
+                            repo.addSavedAddress(newAddress)
+                            nav.popBackStack()
+                        },
+                    )
+                }
                 composable("cetak/confirm") {
                     val currentSize = cetakFlow.sizeGrams ?: 1.0
                     val currentAddr = state.savedAddresses.firstOrNull {
@@ -901,10 +931,16 @@ fun ReidigApp(repo: MockRepository) {
                     CetakReviewScreen(
                         env = env,
                         onBack = { nav.popBackStack() },
-                        onSuccess = { orderId ->
+                        onSuccess = { orderId, txId, paymentMethod ->
                             cetakFlow.orderId = orderId
-                            nav.navigate("cetak/ticket/$orderId") {
-                                popUpTo("print-tab") { inclusive = false }
+                            while (nav.currentBackStackEntry?.destination?.route?.startsWith("cetak/") == true &&
+                                   nav.currentBackStackEntry?.destination?.route != "cetak") {
+                                nav.popBackStack()
+                            }
+                            if (paymentMethod == PaymentMethod.WALLET) {
+                                nav.navigate("cetak/ticket/$orderId")
+                            } else {
+                                nav.navigate("trade/pay/$txId")
                             }
                         },
                         brand = cetakFlow.brand,
@@ -936,7 +972,9 @@ fun ReidigApp(repo: MockRepository) {
                         orderId = orderId,
                         onBack = {
                             if (!nav.popBackStack("print-tab", inclusive = false)) {
-                                nav.navigate("print-tab")
+                                if (!nav.popBackStack("cetak", inclusive = false)) {
+                                    nav.navigate("home")
+                                }
                             }
                         },
                         onOpenReceipt = { txId ->

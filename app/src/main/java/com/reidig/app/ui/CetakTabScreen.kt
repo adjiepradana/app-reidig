@@ -470,9 +470,7 @@ private fun CetakFreeGoldCard(
                 fontSize = 12.sp,
                 color = Palette.InkSecondary,
                 textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = (-4).dp),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
