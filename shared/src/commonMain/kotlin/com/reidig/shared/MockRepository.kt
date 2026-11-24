@@ -10,12 +10,12 @@ import kotlin.random.Random
  * Backend tiruan di dalam aplikasi Goldin v1.2.
  * Diganti klien HTTP saat API siap; layar hanya bergantung pada fungsi-fungsi ini.
  */
-class MockRepository(
-    private val clock: () -> Long,
-    private val random: Random = Random.Default,
+open class MockRepository(
+    protected val clock: () -> Long,
+    protected val random: Random = Random.Default,
 ) {
-    private val _state = MutableStateFlow(initialState())
-    val state: StateFlow<AppState> = _state.asStateFlow()
+    protected val _state = MutableStateFlow(initialState())
+    open val state: StateFlow<AppState> = _state.asStateFlow()
 
     private val quotes = mutableMapOf<String, Quote>()
     private val pending = mutableMapOf<String, PendingOrder>()
@@ -66,7 +66,7 @@ class MockRepository(
     // ----- Akun -----
 
     /** Akun contoh yang sudah terverifikasi, sesuai prototipe Goldin v1.2 (reiuser@gmail.com). */
-    fun login(email: String, password: String = GOLDIN_DEMO_PASSWORD) {
+    open fun login(email: String, password: String = GOLDIN_DEMO_PASSWORD) {
         if (!Rules.isValidEmail(email) || password.isEmpty()) {
             fail("INVALID_CREDENTIALS", "Email atau kata sandi salah")
         }
@@ -350,7 +350,7 @@ class MockRepository(
         }
     }
 
-    fun register(name: String, email: String, password: String = GOLDIN_DEMO_PASSWORD, username: String = "", birthDate: String? = null) {
+    open fun register(name: String, email: String, password: String = GOLDIN_DEMO_PASSWORD, username: String = "", birthDate: String? = null) {
         val cleanName = name.trim()
         val cleanEmail = email.trim()
         val cleanUsername = Rules.normalizeUsername(username).ifBlank {
@@ -385,7 +385,7 @@ class MockRepository(
         }
     }
 
-    fun logout() {
+    open fun logout() {
         pinAttempts = 0
         quotes.clear()
         pending.clear()
@@ -464,7 +464,7 @@ class MockRepository(
      * - 4x set salah: Akun terkunci (harus atur ulang PIN lewat Lupa PIN)
      * - Benar: reset percobaan dan level lockout
      */
-    fun checkLoginPin(pin: String): PinVerifyResult {
+    open fun checkLoginPin(pin: String): PinVerifyResult {
         if (_state.value.isAccountLocked) {
             return PinVerifyResult.AccountLocked
         }
@@ -491,7 +491,7 @@ class MockRepository(
         }
     }
 
-    fun verifyPin(pin: String): Boolean {
+    open fun verifyPin(pin: String): Boolean {
         return when (val res = checkLoginPin(pin)) {
             is PinVerifyResult.Success -> true
             is PinVerifyResult.AccountLocked -> fail("PIN_LOCKED", "Akun terkunci. Atur ulang PIN untuk membuka akunmu.")
@@ -500,7 +500,7 @@ class MockRepository(
         }
     }
 
-    fun resetPin(newPin: String) {
+    open fun resetPin(newPin: String) {
         if (Rules.isWeakPin(newPin, _state.value.user?.birthDate)) {
             fail("WEAK_PIN", "PIN terlalu mudah ditebak. Hindari angka berulang, berurutan, dan tanggal lahir.")
         }
@@ -514,18 +514,18 @@ class MockRepository(
         }
     }
 
-    fun unlockAccountWithResetPin(newPin: String) {
+    open fun unlockAccountWithResetPin(newPin: String) {
         resetPin(newPin)
     }
 
-    fun isRegisteredEmail(email: String): Boolean {
+    open fun isRegisteredEmail(email: String): Boolean {
         val trimmed = email.trim()
         val currentEmail = _state.value.user?.email ?: GOLDIN_DEMO_EMAIL
         return trimmed.equals(currentEmail, ignoreCase = true) ||
             trimmed.equals(GOLDIN_DEMO_EMAIL, ignoreCase = true)
     }
 
-    fun resetPassword(email: String, newPassword: String) {
+    open fun resetPassword(email: String, newPassword: String) {
         if (!Rules.isValidEmail(email)) fail("INVALID_EMAIL", "Format email belum benar.")
         if (!isRegisteredEmail(email)) {
             fail("EMAIL_NOT_FOUND", "Email belum terdaftar")
@@ -535,6 +535,24 @@ class MockRepository(
         }
         _state.update { it.copy(registeredPassword = newPassword) }
     }
+
+    open suspend fun requestEmailCode(email: String, purpose: String = "REGISTER"): EmailCodeResult {
+        return EmailCodeResult(expiresInSeconds = 600, resendInSeconds = 30, devCode = "123456")
+    }
+
+    open suspend fun verifyEmailCode(email: String, code: String, purpose: String = "REGISTER"): String {
+        return "mock-ticket-$code"
+    }
+
+    open suspend fun registerWithTicket(name: String, email: String, password: String, emailTicket: String, phone: String? = null, birthDate: String? = null) {
+        register(name = name, email = email, password = password, birthDate = birthDate)
+    }
+
+    open suspend fun setPinApi(pin: String, oldPin: String? = null) {
+        resetPin(pin)
+    }
+
+    open suspend fun refreshMe() {}
 
     fun verifyAccountForResetPin(email: String, password: String): Boolean {
         if (!Rules.isValidEmail(email)) fail("INVALID_CREDENTIALS", "Email atau kata sandi salah")
@@ -1304,7 +1322,7 @@ class MockRepository(
     }
 
     /** Memverifikasi dan menambahkan rekening bank nasabah (Handoff §9 L101) */
-    fun verifyAndAddBankAccount(bank: String, number: String, holder: String = "Pengguna"): BankAccount {
+    open fun verifyAndAddBankAccount(bank: String, number: String, holder: String = "Pengguna"): BankAccount {
         val state = _state.value
         val cleanNumber = number.filter { it.isDigit() }
         if (cleanNumber.length < 6) {

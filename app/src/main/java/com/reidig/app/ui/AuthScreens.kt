@@ -705,6 +705,7 @@ fun LoginScreen(
     var emailError by remember { mutableStateOf<String?>(null) }
     var passwordError by remember { mutableStateOf<String?>(null) }
     var credentialError by remember { mutableStateOf(false) }
+    var credentialErrorMessage by remember { mutableStateOf<String?>(null) }
     var showPassword by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
 
@@ -745,7 +746,6 @@ fun LoginScreen(
 
         loading = true
         scope.launch {
-            kotlinx.coroutines.delay(900)
             try {
                 env.repo.login(trimmedEmail, password)
                 loading = false
@@ -753,6 +753,12 @@ fun LoginScreen(
             } catch (e: ReidigException) {
                 loading = false
                 credentialError = true
+                credentialErrorMessage = e.message
+                triggerShake()
+            } catch (e: Exception) {
+                loading = false
+                credentialError = true
+                credentialErrorMessage = e.message ?: "Email atau kata sandi salah"
                 triggerShake()
             }
         }
@@ -895,7 +901,7 @@ fun LoginScreen(
                     Box(modifier = Modifier.weight(1f, fill = false)) {
                         when {
                             passwordError != null -> FieldErrorMessage(passwordError!!)
-                            credentialError -> FieldErrorMessage("Email atau kata sandi salah")
+                            credentialError -> FieldErrorMessage(credentialErrorMessage ?: "Email atau kata sandi salah")
                         }
                     }
                     TextLink(
@@ -2914,9 +2920,15 @@ fun ForgotPasswordEmailScreen(
         }
         loading = true
         scope.launch {
-            delay(900)
-            loading = false
-            onCodeSent(em)
+            try {
+                env.repo.requestEmailCode(em, "RESET_PASSWORD")
+                loading = false
+                onCodeSent(em)
+            } catch (e: Exception) {
+                loading = false
+                emailErr = e.message ?: "Gagal meminta kode verifikasi"
+                shakeTrigger++
+            }
         }
     }
 
@@ -3137,6 +3149,7 @@ private fun ForgotPasswordNewPreview() = GoldinTheme {
 @Composable
 fun RegisterEmailScreen(
     signup: SignupDraft,
+    env: AppEnv? = null,
     onBack: () -> Unit,
     onSent: () -> Unit,
     onGoogle: () -> Unit,
@@ -3168,12 +3181,23 @@ fun RegisterEmailScreen(
         }
         loading = true
         scope.launch {
-            delay(900)
-            signup.name = name.trim()
-            signup.email = eTrim
-            signup.viaGoogle = false
-            loading = false
-            onSent()
+            try {
+                if (env != null) {
+                    val codeResult = env.repo.requestEmailCode(eTrim, "REGISTER")
+                    signup.devCode = codeResult.devCode
+                } else {
+                    delay(900)
+                }
+                signup.name = name.trim()
+                signup.email = eTrim
+                signup.viaGoogle = false
+                loading = false
+                onSent()
+            } catch (e: Exception) {
+                loading = false
+                emailErr = e.message ?: "Gagal mengirim kode verifikasi"
+                shakeTrigger++
+            }
         }
     }
 
@@ -3378,7 +3402,7 @@ fun TermsSheet(onDismiss: () -> Unit) {
 
 @ScreenPreview
 @Composable
-private fun RegisterEmailPreview() = GoldinTheme { RegisterEmailScreen(previewSignup(), {}, {}, {}) }
+private fun RegisterEmailPreview() = GoldinTheme { RegisterEmailScreen(signup = previewSignup(), onBack = {}, onSent = {}, onGoogle = {}) }
 
 @ScreenPreview
 @Composable
@@ -3396,9 +3420,11 @@ fun OtpScreen(
     step: Pair<Int, Int>? = null,
     sentVia: String = "Masukkan kode verifikasi yang dikirimkan melalui email",
     target: String,
-    demoCode: String,
+    demoCode: String = "",
     stepLabels: List<String>? = null,
     onBack: () -> Unit,
+    onVerifyCode: (suspend (String) -> Boolean)? = null,
+    onResend: (suspend () -> Unit)? = null,
     onVerified: () -> Unit,
 ) {
     var code by remember { mutableStateOf("") }
@@ -3406,8 +3432,14 @@ fun OtpScreen(
     var shakeTrigger by remember { mutableIntStateOf(0) }
     var seconds by remember { mutableIntStateOf(30) }
     var resendRound by remember { mutableIntStateOf(0) }
+    var errorMessage by remember { mutableStateOf("Kode verifikasi salah. Coba lagi.") }
 
     LaunchedEffect(resendRound) {
+        if (resendRound > 0 && onResend != null) {
+            try {
+                onResend()
+            } catch (_: Exception) {}
+        }
         seconds = 30
         while (seconds > 0) {
             delay(1000)
@@ -3417,13 +3449,31 @@ fun OtpScreen(
     LaunchedEffect(otpState) {
         when (otpState) {
             "verifying" -> {
-                delay(900)
-                // Sesuai Handoff §2 & Main.dc.html: kode 6 digit apa pun lulus (kecuali "000000" untuk simulasi error)
-                if (code != "000000") {
-                    otpState = "success"
+                if (onVerifyCode != null) {
+                    try {
+                        val ok = onVerifyCode(code)
+                        if (ok) {
+                            otpState = "success"
+                        } else {
+                            errorMessage = "Kode verifikasi salah. Coba lagi."
+                            shakeTrigger++
+                            otpState = "error"
+                        }
+                    } catch (e: Exception) {
+                        errorMessage = e.message ?: "Kode verifikasi salah. Coba lagi."
+                        shakeTrigger++
+                        otpState = "error"
+                    }
                 } else {
-                    shakeTrigger++
-                    otpState = "error"
+                    delay(900)
+                    // Sesuai Handoff §2 & Main.dc.html: kode 6 digit apa pun lulus (kecuali "000000" untuk simulasi error)
+                    if (code != "000000") {
+                        otpState = "success"
+                    } else {
+                        errorMessage = "Kode verifikasi salah. Coba lagi."
+                        shakeTrigger++
+                        otpState = "error"
+                    }
                 }
             }
             "success" -> {
@@ -3431,7 +3481,7 @@ fun OtpScreen(
                 onVerified()
             }
             "error" -> {
-                delay(650)
+                delay(950)
                 code = ""
                 otpState = "idle"
             }
@@ -3528,7 +3578,7 @@ fun OtpScreen(
                     }
                 }
                 "error" -> {
-                    ErrorLine("Kode verifikasi salah. Coba lagi.")
+                    ErrorLine(errorMessage)
                 }
                 else -> {
                     if (seconds > 0) {
@@ -3553,6 +3603,35 @@ fun OtpScreen(
                             Text("Tidak menerima kode?", style = GoldinTypography.bodyMd, color = Palette.InkSecondary)
                             TextLink("Kirim ulang", { code = ""; resendRound++ })
                         }
+                    }
+                }
+            }
+        }
+
+        if (demoCode.isNotBlank()) {
+            Spacer(Modifier.height(GoldinSpace.Sm))
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Palette.Primary100)
+                        .clickable {
+                            code = demoCode
+                            otpState = "verifying"
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(PrototypeIcons.Mail, null, tint = Palette.Primary700, modifier = Modifier.size(14.dp))
+                        Text(
+                            text = "Kode uji OTP: $demoCode (klik untuk isi)",
+                            style = GoldinTypography.bodySm,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Palette.Primary700,
+                        )
                     }
                 }
             }
@@ -3655,6 +3734,7 @@ fun RegisterProfileScreen(env: AppEnv, signup: SignupDraft, onBack: () -> Unit, 
     var showPw by remember { mutableStateOf(false) }
     var showPw2 by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    var regError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(username) {
@@ -3907,33 +3987,60 @@ fun RegisterProfileScreen(env: AppEnv, signup: SignupDraft, onBack: () -> Unit, 
                 .background(Palette.Paper)
                 .padding(horizontal = GoldinSpace.Lg, vertical = GoldinSpace.Md),
         ) {
-            PairedButtons(
-                leftText = "Sebelumnya",
-                onLeftClick = onBack,
-                rightText = "Selesai",
-                onRightClick = {
-                    if (!formValid || loading) return@PairedButtons
-                    loading = true
-                    scope.launch {
-                        delay(1000)
-                        signup.username = username
-                        signup.dob = dob
-                        signup.password = password.ifBlank { MockRepository.GOLDIN_DEMO_PASSWORD }
-                        env.repo.register(
-                            name = signup.name.ifBlank { username },
-                            email = signup.email.ifBlank { "$username@gmail.com" },
-                            password = signup.password,
-                            username = username,
-                            birthDate = dob,
-                        )
-                        loading = false
-                        onDone()
-                    }
-                },
-                rightEnabled = formValid,
-                rightLoading = loading,
-                rightLoadingText = "Menyimpan…",
-            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (regError != null) {
+                    Text(
+                        text = regError!!,
+                        style = GoldinTypography.bodySm,
+                        color = Palette.Critical,
+                        modifier = Modifier.padding(bottom = GoldinSpace.Sm),
+                    )
+                }
+                PairedButtons(
+                    leftText = "Sebelumnya",
+                    onLeftClick = onBack,
+                    rightText = "Selesai",
+                    onRightClick = {
+                        if (!formValid || loading) return@PairedButtons
+                        loading = true
+                        regError = null
+                        scope.launch {
+                            try {
+                                signup.username = username
+                                signup.dob = dob
+                                signup.password = password.ifBlank { MockRepository.GOLDIN_DEMO_PASSWORD }
+                                val ticket = signup.emailTicket
+                                if (ticket != null) {
+                                    env.repo.registerWithTicket(
+                                        name = signup.name.ifBlank { username },
+                                        email = signup.email.ifBlank { "$username@gmail.com" },
+                                        password = signup.password,
+                                        emailTicket = ticket,
+                                        phone = null,
+                                        birthDate = dob,
+                                    )
+                                } else {
+                                    env.repo.register(
+                                        name = signup.name.ifBlank { username },
+                                        email = signup.email.ifBlank { "$username@gmail.com" },
+                                        password = signup.password,
+                                        username = username,
+                                        birthDate = dob,
+                                    )
+                                }
+                                loading = false
+                                onDone()
+                            } catch (e: Exception) {
+                                loading = false
+                                regError = e.message ?: "Pendaftaran gagal"
+                            }
+                        }
+                    },
+                    rightEnabled = formValid,
+                    rightLoading = loading,
+                    rightLoadingText = "Menyimpan…",
+                )
+            }
         }
     }
 

@@ -375,8 +375,17 @@ fun ReidigApp(repo: MockRepository) {
                         step = null,
                         sentVia = "Masukkan kode verifikasi yang dikirimkan melalui email",
                         target = email,
-                        demoCode = DEMO_EMAIL_OTP,
+                        demoCode = signup.devCode ?: DEMO_EMAIL_OTP,
                         onBack = { nav.popBackStack() },
+                        onVerifyCode = { enteredCode ->
+                            val ticket = env.repo.verifyEmailCode(email, enteredCode, "RESET_PASSWORD")
+                            signup.emailTicket = ticket
+                            true
+                        },
+                        onResend = {
+                            val res = env.repo.requestEmailCode(email, "RESET_PASSWORD")
+                            signup.devCode = res.devCode
+                        },
                     ) {
                         nav.navigate("forgot/new/$email/$fromPin") {
                             popUpTo("forgot/otp/{email}/{fromPin}") { inclusive = true }
@@ -442,6 +451,7 @@ fun ReidigApp(repo: MockRepository) {
                 composable("register/email") {
                     RegisterEmailScreen(
                         signup = signup,
+                        env = env,
                         onBack = { nav.popBackStack() },
                         onSent = { nav.navigate("register/otp") },
                         onGoogle = { nav.navigate("google/reg") },
@@ -499,9 +509,18 @@ fun ReidigApp(repo: MockRepository) {
                         step = 2 to 3,
                         sentVia = "Masukkan kode verifikasi yang dikirimkan melalui email",
                         target = signup.email,
-                        demoCode = DEMO_EMAIL_OTP,
+                        demoCode = signup.devCode ?: DEMO_EMAIL_OTP,
                         stepLabels = listOf("Buat akun", "Verifikasi", "Data diri"),
                         onBack = { nav.popBackStack() },
+                        onVerifyCode = { enteredCode ->
+                            val ticket = env.repo.verifyEmailCode(signup.email, enteredCode, "REGISTER")
+                            signup.emailTicket = ticket
+                            true
+                        },
+                        onResend = {
+                            val res = env.repo.requestEmailCode(signup.email, "REGISTER")
+                            signup.devCode = res.devCode
+                        },
                     ) {
                         nav.navigate("register/profile") { popUpTo("register/email") }
                     }

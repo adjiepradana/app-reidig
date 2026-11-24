@@ -725,3 +725,9 @@ data class AppState(
 }
 
 class ReidigException(val code: String, message: String) : Exception(message)
+
+data class EmailCodeResult(
+    val expiresInSeconds: Int,
+    val resendInSeconds: Int,
+    val devCode: String?,
+)

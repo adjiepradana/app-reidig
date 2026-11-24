@@ -71,6 +71,8 @@ class SignupDraft {
     var dob: String = ""
     var password: String = ""
     var viaGoogle: Boolean = false
+    var emailTicket: String? = null
+    var devCode: String? = null
 
     fun reset() {
         email = ""
@@ -79,6 +81,8 @@ class SignupDraft {
         dob = ""
         password = ""
         viaGoogle = false
+        emailTicket = null
+        devCode = null
     }
 }
 

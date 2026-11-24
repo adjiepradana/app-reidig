@@ -14,7 +14,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val repo = remember { MockRepository(clock = System::currentTimeMillis) }
+            val repo = remember { AppConfig.createRepository() }
             ReidigTheme { ReidigApp(repo) }
         }
     }
