@@ -28,7 +28,9 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -209,6 +211,8 @@ fun ReidigApp(repo: MockRepository) {
     val kyc = remember { KycDraft() }
     val tradePrefill = remember { TradePrefillDraft() }
     val routinePlanPrefill = remember { RoutinePlanPrefillDraft() }
+    val installmentFlow = remember { InstallmentFlowDraft() }
+    val cetakFlow = remember { CetakFlowDraft() }
     // Hasil transaksi terakhir untuk layar sukses.
     val results = remember { TransactionResults() }
     val backStack by nav.currentBackStackEntryAsState()
@@ -245,6 +249,63 @@ fun ReidigApp(repo: MockRepository) {
         val user = state.user
         when {
             user?.verified == true -> nav.switchTab(tabRoute)
+            user?.isKycPending == true -> kycGateSheet = "wait"
+            else -> kycGateSheet = "need"
+        }
+    }
+    fun openInstallmentFlow(prefillGrams: Double? = null) {
+        val user = state.user
+        when {
+            user?.verified == true -> {
+                if (state.installmentContracts.isNotEmpty() && prefillGrams == null) {
+                    nav.navigate("cicil/list")
+                } else {
+                    installmentFlow.reset(prefillGrams ?: 1.0)
+                    nav.navigate("cicil/sim")
+                }
+            }
+            user?.isKycPending == true -> kycGateSheet = "wait"
+            else -> kycGateSheet = "need"
+        }
+    }
+    fun openCetakFlow(prefillBranchId: String? = null) {
+        val user = state.user
+        when {
+            user?.verified == true -> {
+                cetakFlow.reset(prefillBranchId)
+                if (prefillBranchId != null) {
+                    nav.navigate("cetak/brand?branch=$prefillBranchId")
+                } else {
+                    nav.navigate("cetak/brand")
+                }
+            }
+            user?.isKycPending == true -> kycGateSheet = "wait"
+            else -> kycGateSheet = "need"
+        }
+    }
+    fun openRoutinePlansFlow() {
+        val user = state.user
+        when {
+            user?.verified == true -> {
+                if (state.routinePlans.isNotEmpty()) {
+                    nav.navigate("plans")
+                } else {
+                    nav.navigate("plan-create")
+                }
+            }
+            user?.isKycPending == true -> kycGateSheet = "wait"
+            else -> kycGateSheet = "need"
+        }
+    }
+    fun openCreateRoutinePlan(prefillAmt: Long? = null, prefillGrams: Double? = null) {
+        val user = state.user
+        when {
+            user?.verified == true -> {
+                if (prefillAmt != null || prefillGrams != null) {
+                    routinePlanPrefill.set(prefillAmt ?: 0L, prefillGrams)
+                }
+                nav.navigate("plan-create")
+            }
             user?.isKycPending == true -> kycGateSheet = "wait"
             else -> kycGateSheet = "need"
         }
@@ -552,7 +613,7 @@ fun ReidigApp(repo: MockRepository) {
                         onBuy = { nav.switchTab("catalog") },
                         onSell = { nav.switchTab("sell-tab") },
                         onPrint = { requireVerifiedTab("print-tab") },
-                        onInstallment = { requireVerified("installment") },
+                        onInstallment = { openInstallmentFlow() },
                         onWithdraw = { requireVerifiedTab("wallet") },
                         onVerify = {
                             if (state.user?.isKycPending == true) kycGateSheet = "wait" else startKycFlow()
@@ -561,9 +622,9 @@ fun ReidigApp(repo: MockRepository) {
                         onNotifications = { nav.navigate("notif") },
                         tradePrefill = tradePrefill,
                         routinePlanPrefill = routinePlanPrefill,
-                        onOpenRoutinePlans = { requireVerifiedTab("wallet") },
-                        onOpenRoutinePlanDetail = { _ -> requireVerifiedTab("wallet") },
-                        onCreateRoutinePlan = { requireVerifiedTab("wallet") },
+                        onOpenRoutinePlans = { openRoutinePlansFlow() },
+                        onOpenRoutinePlanDetail = { planId -> nav.navigate("plan-detail/$planId") },
+                        onCreateRoutinePlan = { openCreateRoutinePlan() },
                     )
                 }
                 composable("notif") {
@@ -627,8 +688,8 @@ fun ReidigApp(repo: MockRepository) {
                     PortfolioScreen(
                         env = env,
                         onBuyGold = { nav.switchTab("catalog") },
-                        onRoutinePlans = { nav.switchTab("wallet") },
-                        onInstallmentList = { requireVerified("installment") },
+                        onRoutinePlans = { openRoutinePlansFlow() },
+                        onInstallmentList = { openInstallmentFlow() },
                         onTopup = { requireVerified("topup") },
                         onWithdraw = { requireVerified("withdraw") },
                         onAddBank = { requireVerified("bank-add") },
@@ -678,6 +739,9 @@ fun ReidigApp(repo: MockRepository) {
                             nav.navigate("trade/done/$txId") {
                                 popUpTo("catalog")
                             }
+                        },
+                        onInstallmentSim = { grams ->
+                            openInstallmentFlow(grams)
                         },
                     )
                 }
@@ -742,10 +806,143 @@ fun ReidigApp(repo: MockRepository) {
                     )
                 }
                 composable("print-tab") {
-                    PrintScreen(env, null, null) { order ->
-                        results.printOrder = order
-                        nav.navigate("print-success") { popUpTo("home") }
+                    CetakTabScreen(
+                        env = env,
+                        onStartCetak = { branchId -> openCetakFlow(branchId) },
+                        onOpenBranchCatalog = { nav.navigate("cetak/branches") },
+                        onOpenTicket = { orderId -> nav.navigate("cetak/ticket/$orderId") },
+                        onStartKyc = {
+                            if (state.user?.isKycPending == true) kycGateSheet = "wait" else startKycFlow()
+                        },
+                    )
+                }
+                composable("cetak") {
+                    CetakTabScreen(
+                        env = env,
+                        onStartCetak = { branchId -> openCetakFlow(branchId) },
+                        onOpenBranchCatalog = { nav.navigate("cetak/branches") },
+                        onOpenTicket = { orderId -> nav.navigate("cetak/ticket/$orderId") },
+                        onStartKyc = {
+                            if (state.user?.isKycPending == true) kycGateSheet = "wait" else startKycFlow()
+                        },
+                    )
+                }
+                composable(
+                    "cetak/brand?branch={branch}",
+                    listOf(navArgument("branch") { type = NavType.StringType; nullable = true; defaultValue = null }),
+                ) { entry ->
+                    val branchParam = entry.arguments?.getString("branch")
+                    if (branchParam != null) {
+                        cetakFlow.branchId = branchParam
                     }
+                    CetakBrandSizeScreen(
+                        env = env,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.navigate("print-tab")
+                            }
+                        },
+                        onNext = { brand, size ->
+                            cetakFlow.brand = brand
+                            cetakFlow.sizeGrams = size
+                            nav.navigate("cetak/method")
+                        },
+                        initialBrand = cetakFlow.brand,
+                        initialSize = cetakFlow.sizeGrams,
+                    )
+                }
+                composable("cetak/brand") {
+                    CetakBrandSizeScreen(
+                        env = env,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.navigate("print-tab")
+                            }
+                        },
+                        onNext = { brand, size ->
+                            cetakFlow.brand = brand
+                            cetakFlow.sizeGrams = size
+                            nav.navigate("cetak/method")
+                        },
+                        initialBrand = cetakFlow.brand,
+                        initialSize = cetakFlow.sizeGrams,
+                    )
+                }
+                composable("cetak/method") {
+                    CetakMethodScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onNext = { method, branchId, addressId ->
+                            cetakFlow.method = method
+                            cetakFlow.branchId = branchId
+                            val addr = state.savedAddresses.firstOrNull { it.id == addressId }
+                            cetakFlow.deliveryAddress = addr?.let {
+                                "${it.details}, ${it.subDistrict}, ${it.district}, ${it.city}, ${it.province} ${it.postalCode}"
+                            }
+                            cetakFlow.recipientName = addr?.recipientName
+                            cetakFlow.recipientPhone = addr?.phoneNumber
+                            nav.navigate("cetak/confirm")
+                        },
+                        onOpenAllBranches = {
+                            nav.navigate("cetak/branches")
+                        },
+                        initialMethod = cetakFlow.method,
+                        initialBranchId = cetakFlow.branchId,
+                        initialAddressId = state.savedAddresses.firstOrNull {
+                            it.recipientName == cetakFlow.recipientName
+                        }?.id,
+                    )
+                }
+                composable("cetak/confirm") {
+                    val currentSize = cetakFlow.sizeGrams ?: 1.0
+                    val currentAddr = state.savedAddresses.firstOrNull {
+                        it.recipientName == cetakFlow.recipientName
+                    }
+                    CetakReviewScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onSuccess = { orderId ->
+                            cetakFlow.orderId = orderId
+                            nav.navigate("cetak/ticket/$orderId") {
+                                popUpTo("print-tab") { inclusive = false }
+                            }
+                        },
+                        brand = cetakFlow.brand,
+                        sizeGrams = currentSize,
+                        method = cetakFlow.method,
+                        branchId = cetakFlow.branchId,
+                        addressId = currentAddr?.id,
+                        initialPaymentMethod = cetakFlow.paymentMethod,
+                    )
+                }
+                composable("cetak/branches") {
+                    CetakBranchScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onSelectBranch = { branchId ->
+                            cetakFlow.branchId = branchId
+                            nav.popBackStack()
+                        },
+                        selectedBranchId = cetakFlow.branchId,
+                    )
+                }
+                composable(
+                    "cetak/ticket/{orderId}",
+                    arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
+                ) { entry ->
+                    val orderId = entry.arguments?.getString("orderId").orEmpty()
+                    CetakTicketScreen(
+                        env = env,
+                        orderId = orderId,
+                        onBack = {
+                            if (!nav.popBackStack("print-tab", inclusive = false)) {
+                                nav.navigate("print-tab")
+                            }
+                        },
+                        onOpenReceipt = { txId ->
+                            nav.navigate("trade/receipt/$txId")
+                        },
+                    )
                 }
                 composable("print?token={token}", listOf(navArgument("token") { type = NavType.StringType; defaultValue = "" })) { entry ->
                     PrintScreen(env, entry.arguments?.getString("token")?.ifEmpty { null }, { nav.popBackStack() }) { order ->
@@ -772,8 +969,8 @@ fun ReidigApp(repo: MockRepository) {
                     PortfolioScreen(
                         env = env,
                         onBuyGold = { nav.switchTab("catalog") },
-                        onRoutinePlans = { nav.switchTab("wallet") },
-                        onInstallmentList = { requireVerified("installment") },
+                        onRoutinePlans = { openRoutinePlansFlow() },
+                        onInstallmentList = { openInstallmentFlow() },
                         onTopup = { requireVerified("topup") },
                         onWithdraw = { requireVerified("withdraw") },
                         onAddBank = { requireVerified("bank-add") },
@@ -902,44 +1099,235 @@ fun ReidigApp(repo: MockRepository) {
                         onPortfolio = { nav.switchTab("wallet") },
                     )
                 }
-                composable("installment") {
-                    InstallmentScreen(env, { nav.popBackStack() }) { draft ->
-                        results.installmentDraft = draft
-                        nav.navigate("installment-agreement")
-                    }
-                }
-                composable("installment-agreement") {
-                    results.installmentDraft?.let { draft ->
-                        InstallmentAgreementScreen(env, draft, { nav.popBackStack() }) { application ->
-                            results.application = application
-                            nav.navigate("installment-pay") { popUpTo("home") }
-                        }
-                    }
-                }
-                composable("installment-pay") {
-                    results.application?.let { application ->
-                        DownPaymentScreen(env, application, onCancelled = { nav.popBackStack("home", false) }) { contract ->
-                            results.contract = contract
-                            nav.navigate("installment-success") { popUpTo("home") }
-                        }
-                    }
-                }
-                composable("installment-success") {
-                    SuccessScreen(
-                        "Uang muka diterima",
-                        "Cicilan Anda aktif. Token terkunci sampai lunas.",
-                        "Lihat kontrak",
-                        { nav.switchTab("account") },
-                    ) {
-                        results.contract?.let { contract ->
-                            SurfaceCard {
-                                SummaryRow("Kontrak", contract.id)
-                                SummaryRow("Uang muka", rupiah(contract.downPayment))
-                                SummaryRow("Angsuran per bulan", rupiah(contract.monthlyBeforeFees), strong = true)
-                                SummaryRow("Tenor", "${contract.tenorMonths} bulan")
+                // --- TABUNGAN RUTIN (TAHAP 7) ---
+                composable("plans") {
+                    RoutinePlanListScreen(
+                        env = env,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.popBackStack("home", inclusive = false)
                             }
+                        },
+                        onOpenPlanDetail = { planId ->
+                            nav.navigate("plan-detail/$planId")
+                        },
+                        onCreatePlan = {
+                            openCreateRoutinePlan()
+                        },
+                    )
+                }
+                composable("plan-create") {
+                    RoutinePlanFormScreen(
+                        env = env,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.popBackStack("home", inclusive = false)
+                            }
+                        },
+                        onPlanCreated = { planId ->
+                            nav.navigate("plan-done/$planId") {
+                                popUpTo("home") { inclusive = false }
+                            }
+                        },
+                        onAddBank = { requireVerified("bank-add") },
+                        prefillDraft = routinePlanPrefill,
+                    )
+                }
+                composable(
+                    "plan-done/{planId}",
+                    arguments = listOf(navArgument("planId") { type = NavType.StringType }),
+                ) { entry ->
+                    val planId = entry.arguments?.getString("planId").orEmpty()
+                    RoutinePlanDoneScreen(
+                        env = env,
+                        planId = planId,
+                        onSeePlan = { id ->
+                            nav.navigate("plan-detail/$id") {
+                                popUpTo("plan-done/{planId}") { inclusive = true }
+                            }
+                        },
+                    )
+                }
+                composable(
+                    "plan-detail/{planId}",
+                    arguments = listOf(navArgument("planId") { type = NavType.StringType }),
+                ) { entry ->
+                    val planId = entry.arguments?.getString("planId").orEmpty()
+                    RoutinePlanDetailScreen(
+                        env = env,
+                        planId = planId,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.popBackStack("home", inclusive = false)
+                            }
+                        },
+                        onOpenReceipt = { txId ->
+                            nav.navigate("trade/receipt/$txId")
+                        },
+                    )
+                }
+
+                // --- CICIL EMAS (TAHAP 7) ---
+                composable("cicil") {
+                    LaunchedEffect(Unit) {
+                        if (state.installmentContracts.isNotEmpty()) {
+                            nav.navigate("cicil/list") { popUpTo("cicil") { inclusive = true } }
+                        } else {
+                            installmentFlow.reset(1.0)
+                            nav.navigate("cicil/sim") { popUpTo("cicil") { inclusive = true } }
                         }
                     }
+                    Box(Modifier.fillMaxSize().background(Palette.Paper), contentAlignment = Alignment.Center) {
+                        GoldinSpinner()
+                    }
+                }
+                composable("installment") {
+                    LaunchedEffect(Unit) {
+                        if (state.installmentContracts.isNotEmpty()) {
+                            nav.navigate("cicil/list") { popUpTo("installment") { inclusive = true } }
+                        } else {
+                            installmentFlow.reset(1.0)
+                            nav.navigate("cicil/sim") { popUpTo("installment") { inclusive = true } }
+                        }
+                    }
+                    Box(Modifier.fillMaxSize().background(Palette.Paper), contentAlignment = Alignment.Center) {
+                        GoldinSpinner()
+                    }
+                }
+                composable("cicil/list") {
+                    InstallmentListScreen(
+                        env = env,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.popBackStack("home", inclusive = false)
+                            }
+                        },
+                        onOpenDetail = { contractId ->
+                            nav.navigate("cicil/detail/$contractId")
+                        },
+                        onCreateInstallment = {
+                            installmentFlow.reset(1.0)
+                            nav.navigate("cicil/sim")
+                        },
+                    )
+                }
+                composable("cicil/sim") {
+                    InstallmentSimScreen(
+                        env = env,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.popBackStack("home", inclusive = false)
+                            }
+                        },
+                        onNext = { grams, tenor, dp ->
+                            installmentFlow.grams = grams
+                            installmentFlow.tenorMonths = tenor
+                            installmentFlow.dpPercent = dp
+                            nav.navigate("cicil/method")
+                        },
+                        initialGrams = installmentFlow.grams,
+                    )
+                }
+                composable("cicil/method") {
+                    InstallmentPaymentMethodScreen(
+                        env = env,
+                        onBack = { nav.popBackStack() },
+                        onNext = { mode, source ->
+                            installmentFlow.paymentMode = mode
+                            installmentFlow.fundingSource = source
+                            nav.navigate("cicil/confirm")
+                        },
+                        onAddBank = { requireVerified("bank-add") },
+                    )
+                }
+                composable("cicil/confirm") {
+                    InstallmentConfirmScreen(
+                        env = env,
+                        grams = installmentFlow.grams,
+                        tenorMonths = installmentFlow.tenorMonths,
+                        dpPercent = installmentFlow.dpPercent,
+                        paymentMode = installmentFlow.paymentMode,
+                        fundingSource = installmentFlow.fundingSource,
+                        onBack = { nav.popBackStack() },
+                        onSubmit = { quoteId ->
+                            installmentFlow.quoteId = quoteId
+                            nav.navigate("cicil/check/$quoteId") {
+                                popUpTo("cicil/sim") { inclusive = false }
+                            }
+                        },
+                    )
+                }
+                composable(
+                    "cicil/check/{quoteId}",
+                    arguments = listOf(navArgument("quoteId") { type = NavType.StringType }),
+                ) { entry ->
+                    val quoteId = entry.arguments?.getString("quoteId") ?: installmentFlow.quoteId
+                    InstallmentScoringScreen(
+                        env = env,
+                        quoteId = quoteId,
+                        onApproved = { approvedQuoteId ->
+                            nav.navigate("cicil/akad/$approvedQuoteId") {
+                                popUpTo("cicil/check/{quoteId}") { inclusive = true }
+                            }
+                        },
+                        onUbahSimulasi = {
+                            nav.popBackStack("cicil/sim", inclusive = false)
+                        },
+                        onExit = {
+                            nav.popBackStack("home", inclusive = false)
+                        },
+                    )
+                }
+                composable(
+                    "cicil/akad/{quoteId}",
+                    arguments = listOf(navArgument("quoteId") { type = NavType.StringType }),
+                ) { entry ->
+                    val quoteId = entry.arguments?.getString("quoteId") ?: installmentFlow.quoteId
+                    InstallmentAkadScreen(
+                        env = env,
+                        quoteId = quoteId,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.popBackStack("home", inclusive = false)
+                            }
+                        },
+                        onSuccess = { contractId ->
+                            installmentFlow.contractId = contractId
+                            nav.navigate("cicil/success/$contractId") {
+                                popUpTo("home") { inclusive = false }
+                            }
+                        },
+                    )
+                }
+                composable(
+                    "cicil/success/{contractId}",
+                    arguments = listOf(navArgument("contractId") { type = NavType.StringType }),
+                ) { entry ->
+                    val contractId = entry.arguments?.getString("contractId") ?: installmentFlow.contractId
+                    InstallmentSuccessScreen(
+                        env = env,
+                        contractId = contractId,
+                        onSeeContract = { id ->
+                            nav.navigate("cicil/detail/$id") {
+                                popUpTo("cicil/success/{contractId}") { inclusive = true }
+                            }
+                        },
+                    )
+                }
+                composable(
+                    "cicil/detail/{contractId}",
+                    arguments = listOf(navArgument("contractId") { type = NavType.StringType }),
+                ) { entry ->
+                    val contractId = entry.arguments?.getString("contractId") ?: ""
+                    InstallmentDetailScreen(
+                        env = env,
+                        contractId = contractId,
+                        onBack = {
+                            if (!nav.popBackStack()) {
+                                nav.popBackStack("home", inclusive = false)
+                            }
+                        },
+                    )
                 }
                 composable("account") {
                     AccountScreen(
@@ -947,7 +1335,7 @@ fun ReidigApp(repo: MockRepository) {
                         onVerify = {
                             if (state.user?.isKycPending == true) kycGateSheet = "wait" else startKycFlow()
                         },
-                        onInstallments = { requireVerified("installment") },
+                        onInstallments = { openInstallmentFlow() },
                         onLogout = {
                             repo.logout()
                             nav.navigate("welcome") { popUpTo(0) { inclusive = true } }
@@ -988,6 +1376,26 @@ private fun WalletSwitch(selected: Int, onSwitch: () -> Unit) {
 @Composable
 private fun TransactionSwitch(selected: Int, inset: Dp = 20.dp, onSwitch: () -> Unit) {
     SegmentSwitch(listOf("Beli emas", "Jual emas"), selected, inset) { onSwitch() }
+}
+
+private class InstallmentFlowDraft {
+    var grams by mutableStateOf(1.0)
+    var tenorMonths by mutableIntStateOf(12)
+    var dpPercent by mutableIntStateOf(20)
+    var paymentMode by mutableStateOf("auto_debit")
+    var fundingSource by mutableStateOf("bank_bsi")
+    var quoteId by mutableStateOf("")
+    var contractId by mutableStateOf("")
+
+    fun reset(initialGrams: Double = 1.0) {
+        grams = initialGrams.coerceAtLeast(0.5)
+        tenorMonths = 12
+        dpPercent = 20
+        paymentMode = "auto_debit"
+        fundingSource = "bank_bsi"
+        quoteId = ""
+        contractId = ""
+    }
 }
 
 private class TransactionResults {

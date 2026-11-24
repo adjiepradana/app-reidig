@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class MockRepositoryTest {
@@ -890,5 +891,346 @@ class MockRepositoryTest {
         val completed = repo.completeWithdrawal(txWdr.id)
         assertEquals("ok", completed.status)
         assertTrue(state.notifications.any { it.txId == txWdr.id && it.title == "Penarikan dana berhasil" })
+    }
+
+    @Test
+    fun routineSavingsLifecycleAndDebit() {
+        demo()
+        val initialGold = state.goldBalanceGrams // 2.4518 gr
+        val initialWallet = state.walletBalance // Rp1.250.000
+
+        // 1. Validasi input
+        assertCode("INVALID") {
+            repo.createRoutinePlan("Plan Gagal", RoutinePlanType.TARGET_EMAS, 0, 1.0, 5_000L, 5, "kas")
+        }
+        assertCode("INVALID") {
+            repo.createRoutinePlan("Plan Gagal", RoutinePlanType.TARGET_EMAS, 0, 1.0, 50_000L, 29, "kas")
+        }
+
+        // 2. Buat tabungan rutin tipe Target Emas
+        val plan = repo.createRoutinePlan("Tabungan Liburan", RoutinePlanType.TARGET_EMAS, 0, 2.0, 100_000L, 15, "kas")
+        assertEquals("Tabungan Liburan", plan.name)
+        assertEquals(RoutinePlanType.TARGET_EMAS, plan.type)
+        assertEquals(2.0, plan.targetGrams)
+        assertEquals(100_000L, plan.monthlyAmount)
+        assertEquals(15, plan.debitDate)
+        assertEquals(RoutinePlanStatus.ACTIVE, plan.status)
+        assertTrue(state.routinePlans.any { it.id == plan.id })
+
+        // 3. Jeda dan Lanjutkan
+        repo.pauseRoutinePlan(plan.id)
+        assertEquals(RoutinePlanStatus.PAUSED, repo.getRoutinePlan(plan.id)?.status)
+        assertCode("PLAN_PAUSED") {
+            repo.executeRoutineDebit(plan.id)
+        }
+
+        repo.resumeRoutinePlan(plan.id)
+        assertEquals(RoutinePlanStatus.ACTIVE, repo.getRoutinePlan(plan.id)?.status)
+
+        // 4. Eksekusi debit berkala
+        val txDebit = repo.executeRoutineDebit(plan.id)
+        assertEquals(TxType.BUY, txDebit.type)
+        assertEquals("Tabungan rutin", txDebit.method)
+        assertEquals(100_000L, txDebit.subtotal)
+        assertEquals(plan.id, txDebit.planId)
+        assertTrue(state.goldBalanceGrams > initialGold)
+        assertTrue(state.walletBalance < initialWallet)
+
+        val updatedPlan = repo.getRoutinePlan(plan.id)!!
+        assertEquals(1, updatedPlan.mutations.size)
+        assertTrue(updatedPlan.savedGrams > 0.0)
+
+        // 5. Hentikan tabungan rutin (plan terhapus dari daftar, emas tetap di portofolio)
+        val goldBeforeStop = state.goldBalanceGrams
+        repo.stopRoutinePlan(plan.id)
+        assertFalse(state.routinePlans.any { it.id == plan.id })
+        assertEquals(goldBeforeStop, state.goldBalanceGrams)
+    }
+
+    @Test
+    fun installmentCalculationsAndBounds() {
+        demo()
+
+        // 1. Validasi minimal harga emas Rp500.000
+        assertCode("INVALID_AMOUNT") {
+            repo.createInstallmentQuote(0.1, 12, 20) // 0.1 gr * 2.315.000 = 231.500 < 500.000
+        }
+
+        // 2. Perhitungan formula matematis flat margin syariah BSI Finance
+        // 1.0 gr @ 2.315.000/gr, Tenor 12 bulan, DP 20%
+        val quote = repo.createInstallmentQuote(1.0, 12, 20)
+        val calc = quote.calculation
+        assertEquals(2_315_000L, calc.goldValue)
+        assertEquals(463_000L, calc.downPaymentAmount) // 20% dari 2.315.000
+        assertEquals(1_852_000L, calc.principal) // Pokok pembiayaan = 2.315.000 - 463.000
+        // Margin = round(1.852.000 * 0.009 * 12) = 200.016
+        assertEquals(200_016L, calc.margin)
+        // Angsuran per bulan = ceil((1.852.000 + 200.016) / 12) = ceil(2.052.016 / 12) = 171.002
+        assertEquals(171_002L, calc.monthlyInstallment)
+        assertEquals(25_000L, calc.adminFee)
+        assertEquals(488_000L, calc.totalDownPayment) // 463.000 + 25.000
+        assertFalse(quote.isExpired(now))
+
+        // 3. Verifikasi scoring
+        assertTrue(repo.verifyScoring(quote.id, isSimulatedPass = true))
+        assertFalse(repo.verifyScoring(quote.id, isSimulatedPass = false))
+    }
+
+    @Test
+    fun installmentLifecycleAndGoldUnlockOnPayoff() {
+        demo()
+        // Top up dana agar mencukupi untuk DP + 3 angsuran bulanan
+        val topupTx = repo.requestTopupVa("bca")
+        repo.simulateVaTopupSuccess(topupTx.id, 2_000_000L)
+
+        val initialLockedGold = state.lockedGoldGrams // 0.0 gr
+        val initialGoldBal = state.goldBalanceGrams // 2.4518 gr
+        val initialWallet = state.walletBalance // Rp3.250.000
+
+        // 1. Buat quote 1 gr tenor 3 bulan DP 10%
+        val quote = repo.createInstallmentQuote(1.0, 3, 10)
+        val dpTotal = quote.calculation.totalDownPayment
+
+        // 2. Tanda tangani akad & bayar DP (OTP salah -> gagal)
+        assertCode("INVALID_OTP") {
+            repo.signAndPayInstallmentAkad(quote.id, "000000", PaymentMethod.WALLET, MockRepository.GOLDIN_DEMO_PIN)
+        }
+
+        // OTP benar 123456 & PIN benar 135790
+        val contract = repo.signAndPayInstallmentAkad(quote.id, "123456", PaymentMethod.WALLET, MockRepository.GOLDIN_DEMO_PIN)
+        assertEquals(1.0, contract.goldGrams)
+        assertEquals(3, contract.tenorMonths)
+        assertEquals(0, contract.paidMonths)
+        assertEquals("active", contract.status)
+        assertEquals(3, contract.schedule.size)
+        assertEquals(initialLockedGold + 1.0, state.lockedGoldGrams) // Emas terkunci 1 gr
+        assertEquals(initialWallet - dpTotal, state.walletBalance)
+        assertEquals(initialGoldBal, state.goldBalanceGrams) // Saldo aktif belum bertambah
+
+        // 3. Bayar angsuran bulan ke-1
+        val afterMonth1 = repo.payInstallmentMonthly(contract.id, PaymentMethod.WALLET, MockRepository.GOLDIN_DEMO_PIN)
+        assertEquals(1, afterMonth1.paidMonths)
+        assertEquals(1.0, state.lockedGoldGrams) // Masih terkunci
+        assertFalse(afterMonth1.isDone)
+
+        // 4. Bayar angsuran bulan ke-2
+        val afterMonth2 = repo.payInstallmentMonthly(contract.id, PaymentMethod.WALLET, MockRepository.GOLDIN_DEMO_PIN)
+        assertEquals(2, afterMonth2.paidMonths)
+        assertEquals(1.0, state.lockedGoldGrams) // Masih terkunci
+        assertFalse(afterMonth2.isDone)
+
+        // 5. Bayar angsuran bulan ke-3 (Pelunasan 100%)
+        val afterMonth3 = repo.payInstallmentMonthly(contract.id, PaymentMethod.WALLET, MockRepository.GOLDIN_DEMO_PIN)
+        assertEquals(3, afterMonth3.paidMonths)
+        assertTrue(afterMonth3.isDone)
+        assertEquals("done", afterMonth3.status)
+        assertTrue(afterMonth3.isPaidOff)
+
+        // Verifikasi pelepasan emas (Unlocked to Active Portfolio):
+        assertEquals(0.0, state.lockedGoldGrams) // Gram terkunci berkurang ke 0
+        assertEquals(floorGrams4(initialGoldBal + 1.0), state.goldBalanceGrams) // Saldo aktif bertambah 1 gr!
+        assertTrue(state.notifications.any { it.title == "Cicilan emas lunas" })
+
+        // Angsuran yang sudah lunas tidak bisa dibayar lagi
+        assertCode("ALREADY_PAID") {
+            repo.payInstallmentMonthly(contract.id, PaymentMethod.WALLET, MockRepository.GOLDIN_DEMO_PIN)
+        }
+    }
+
+    @Test
+    fun installmentAcceleratedPayoffUnlocksGoldImmediately() {
+        demo()
+        val topupTx = repo.requestTopupVa("bca")
+        repo.simulateVaTopupSuccess(topupTx.id, 5_000_000L)
+
+        val initialLocked = state.lockedGoldGrams
+        val initialGold = state.goldBalanceGrams
+
+        val quote = repo.createInstallmentQuote(
+            grams = 2.0,
+            tenorMonths = 6,
+            dpPercent = 20,
+            paymentMode = "manual",
+            fundingSource = "kas",
+        )
+        val contract = repo.signAndPayInstallmentAkad(
+            quoteId = quote.id,
+            smsOtp = "123456",
+            paymentMethod = PaymentMethod.WALLET,
+            pin = MockRepository.GOLDIN_DEMO_PIN,
+        )
+        assertEquals(floorGrams4(initialLocked + 2.0), state.lockedGoldGrams)
+
+        // Bayar 1 bulan dulu
+        repo.payInstallmentMonthly(contract.id, PaymentMethod.WALLET, MockRepository.GOLDIN_DEMO_PIN)
+        assertEquals(1, repo.getInstallmentContract(contract.id)?.paidMonths)
+
+        // Lunasi langsung sisa 5 bulan (Pelunasan dipercepat)
+        val paidOffContract = repo.payoffInstallmentContract(
+            contractId = contract.id,
+            paymentMethod = PaymentMethod.WALLET,
+            pin = MockRepository.GOLDIN_DEMO_PIN,
+        )
+        assertTrue(paidOffContract.isDone)
+        assertEquals(6, paidOffContract.paidMonths)
+        assertTrue(paidOffContract.schedule.all { it.isPaid })
+        assertEquals(0.0, state.lockedGoldGrams)
+        assertEquals(floorGrams4(initialGold + 2.0), state.goldBalanceGrams)
+    }
+
+    @Test
+    fun dateHelperCalculations() {
+        val testEpoch = 1794960000000L // Contoh epoch ms
+        val comp = parseDateComponents(testEpoch)
+        assertTrue(comp.year >= 2026)
+        assertTrue(comp.month in 1..12)
+        assertTrue(comp.day in 1..31)
+
+        val reconstructed = epochMsOf(comp.year, comp.month, comp.day, 8, 0)
+        val comp2 = parseDateComponents(reconstructed)
+        assertEquals(comp.year, comp2.year)
+        assertEquals(comp.month, comp2.month)
+        assertEquals(comp.day, comp2.day)
+
+        // Cek perhitungan jatuh tempo cicilan (1 bulan ke depan)
+        val due1 = calculateInstallmentDueDate(reconstructed, 1, 5)
+        val compDue1 = parseDateComponents(due1)
+        assertEquals(5, compDue1.day)
+
+        // Cek perhitungan tanggal debit berikutnya
+        val nextDebit = calculateNextDebitDate(15, reconstructed)
+        val compDebit = parseDateComponents(nextDebit)
+        assertEquals(15, compDebit.day)
+    }
+
+    @Test
+    fun goldinPhysicalPrintOrderFlowAndBranches() {
+        demo()
+
+        // 1. Verifikasi 8 Cabang Raja Emas Resmi
+        val branches = repo.getGoldBranches()
+        assertEquals(8, branches.size)
+        val branchKwc = repo.getGoldBranch("kwc")
+        assertNotNull(branchKwc)
+        assertEquals("Raja Emas Karawaci", branchKwc.name)
+        assertEquals("Banten", branchKwc.province)
+        assertEquals(1.2, branchKwc.distanceKm)
+        assertFalse(branchKwc.isSevenDays)
+
+        val branchBsd = repo.getGoldBranch("bsd")
+        assertNotNull(branchBsd)
+        assertTrue(branchBsd.isSevenDays)
+
+        // 2. Verifikasi Katalog & Stok
+        val stocks = repo.getGoldBarStock()
+        assertEquals(24, stocks.size) // 3 brand * 8 pecahan
+        assertFalse(repo.isStockAvailable(GoldBrand.ANTAM, 50.0))
+        assertFalse(repo.isStockAvailable(GoldBrand.GALERI_24, 3.0))
+        assertFalse(repo.isStockAvailable(GoldBrand.GALERI_24, 100.0))
+        assertTrue(repo.isStockAvailable(GoldBrand.LM_REI, 1.0))
+        assertTrue(repo.isStockAvailable(GoldBrand.ANTAM, 1.0))
+        assertTrue(repo.isStockAvailable(GoldBrand.GALERI_24, 1.0))
+
+        // 3. Verifikasi Seeded Orders Demo
+        val initialOrders = repo.getPhysicalPrintOrders()
+        assertEquals(2, initialOrders.size)
+        val demo1 = repo.getPhysicalPrintOrder("CTK-DEMO-01")
+        assertNotNull(demo1)
+        assertEquals(PhysicalOrderStatus.READY_PICKUP, demo1.status)
+        assertEquals("TKT-REI-839102", demo1.ticketCode)
+        assertEquals("Selasa, 24 Nov 2026", demo1.pickupScheduleDate)
+
+        // 4. Verifikasi Validasi Pembuatan Pesanan
+        val initialGold = state.goldBalanceGrams
+        val initialWallet = state.walletBalance
+
+        // Error: Stok habis
+        assertCode("OUT_OF_STOCK") {
+            repo.createPhysicalPrintOrder(
+                brand = GoldBrand.ANTAM,
+                weightGrams = 50.0,
+                method = PrintMethod.BRANCH,
+                pin = MockRepository.GOLDIN_DEMO_PIN,
+            )
+        }
+
+        // Error: Saldo emas bebas tidak cukup (saldo 2.4518 gr vs minta 5 gr)
+        assertCode("INSUFFICIENT_GOLD") {
+            repo.createPhysicalPrintOrder(
+                brand = GoldBrand.LM_REI,
+                weightGrams = 5.0,
+                method = PrintMethod.BRANCH,
+                pin = MockRepository.GOLDIN_DEMO_PIN,
+            )
+        }
+
+        // Error: PIN salah
+        assertCode("WRONG_PIN") {
+            repo.createPhysicalPrintOrder(
+                brand = GoldBrand.LM_REI,
+                weightGrams = 1.0,
+                method = PrintMethod.BRANCH,
+                pin = "000000",
+            )
+        }
+
+        // 5. Sukses: Cetak 1 gr LM REI Ambil di Cabang (Biaya Rp50.000)
+        val order1 = repo.createPhysicalPrintOrder(
+            brand = GoldBrand.LM_REI,
+            weightGrams = 1.0,
+            method = PrintMethod.BRANCH,
+            branchId = "kwc",
+            paymentMethod = PaymentMethod.WALLET,
+            pin = MockRepository.GOLDIN_DEMO_PIN,
+        )
+        assertEquals(1.0, order1.weightGrams)
+        assertEquals(50_000L, order1.printFee)
+        assertEquals(0L, order1.shippingInsuranceFee)
+        assertEquals(50_000L, order1.totalPayment)
+        assertTrue(order1.ticketCode.startsWith("TKT-REI-"))
+        assertTrue(order1.serialNumber?.startsWith("LMR-") == true)
+        assertEquals(floorGrams4(initialGold - 1.0), state.goldBalanceGrams)
+        assertEquals(initialWallet - 50_000L, state.walletBalance)
+
+        // 6. Sukses: Cetak 1 gr Galeri 24 Dikirim ke Alamat (Biaya Rp50.000 + Rp35.000 = Rp85.000)
+        val order2 = repo.createPhysicalPrintOrder(
+            brand = GoldBrand.GALERI_24,
+            weightGrams = 1.0,
+            method = PrintMethod.DELIVERY,
+            deliveryAddress = "Jl. Sudirman No. 10, Jakarta",
+            recipientName = "Budi Santoso",
+            recipientPhone = "081234567890",
+            paymentMethod = PaymentMethod.WALLET,
+            pin = MockRepository.GOLDIN_DEMO_PIN,
+        )
+        assertEquals(50_000L, order2.printFee)
+        assertEquals(35_000L, order2.shippingInsuranceFee)
+        assertEquals(85_000L, order2.totalPayment)
+        assertTrue(order2.trackingNumber?.startsWith("RE") == true)
+        assertTrue(order2.serialNumber?.startsWith("G24-") == true)
+        assertEquals(floorGrams4(initialGold - 2.0), state.goldBalanceGrams)
+
+        // 7. Verifikasi Atur Jadwal Pengambilan
+        val updatedOrder = repo.updatePickupSchedule(order1.id, "Kamis, 26 Nov 2026", "11.00–12.00 WIB")
+        assertEquals("Kamis, 26 Nov 2026", updatedOrder.pickupScheduleDate)
+        assertEquals("11.00–12.00 WIB", updatedOrder.pickupScheduleTimeSlot)
+        assertEquals("Kamis, 26 Nov 2026", repo.getPhysicalPrintOrder(order1.id)?.pickupScheduleDate)
+
+        // 8. Verifikasi Tambah Alamat Tersimpan
+        val newAddr = SavedAddress(
+            id = "addr-test-2",
+            label = "Kantor",
+            recipientName = "Budi Kantor",
+            phoneNumber = "081299998888",
+            province = "DKI Jakarta",
+            city = "Jakarta Selatan",
+            district = "Kebayoran Baru",
+            subDistrict = "Senayan",
+            postalCode = "12190",
+            details = "Gedung Bursa Efek Indonesia Tower 1 Lt. 15",
+            isPrimary = false,
+        )
+        repo.addSavedAddress(newAddr)
+        assertTrue(repo.state.value.savedAddresses.any { it.id == "addr-test-2" })
     }
 }

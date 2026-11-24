@@ -30,6 +30,10 @@ enum class PaymentMethod(
 enum class PrintMethod(val label: String) {
     BRANCH("Ambil di cabang"),
     JNE("Dikirim ke alamat"),
+    DELIVERY("Dikirim ke alamat");
+
+    val isBranch: Boolean get() = this == BRANCH
+    val isDelivery: Boolean get() = this == JNE || this == DELIVERY
 }
 
 enum class PrintStatus(val label: String) {
@@ -345,6 +349,56 @@ sealed class PinVerifyResult {
 
 // ===== Domain Model Goldin v1.2 =====
 
+data class DateComponents(val year: Int, val month: Int, val day: Int)
+
+fun parseDateComponents(epochMs: Long): DateComponents {
+    val totalSeconds = epochMs / 1000L
+    val days = (totalSeconds / 86400L).toInt()
+    var l = days + 68569 + 2440588
+    val n = (4 * l) / 146097
+    l -= (146097 * n + 3) / 4
+    val i = (4000 * (l + 1)) / 1461001
+    l = l - (1461 * i) / 4 + 31
+    val j = (80 * l) / 2447
+    val day = l - (2447 * j) / 80
+    l = j / 11
+    val month = j + 2 - (12 * l)
+    val year = 100 * (n - 49) + i + l
+    return DateComponents(year, month, day)
+}
+
+fun epochMsOf(year: Int, month: Int, day: Int, hour: Int = 8, minute: Int = 0): Long {
+    val y = if (month <= 2) year - 1 else year
+    val era = if (y >= 0) y / 400 else (y - 399) / 400
+    val yoe = y - era * 400
+    val m = if (month <= 2) month + 12 else month
+    val doy = (153 * (m - 3) + 2) / 5 + day - 1
+    val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    val days = era.toLong() * 146097L + doe.toLong() - 719468L
+    return (days * 86400L + hour * 3600L + minute * 60L) * 1000L
+}
+
+fun calculateNextDebitDate(debitDay: Int, fromMs: Long): Long {
+    val date = parseDateComponents(fromMs)
+    val safeDay = debitDay.coerceIn(1, 28)
+    return if (date.day < safeDay) {
+        epochMsOf(date.year, date.month, safeDay, 8, 0)
+    } else {
+        val nextMonth = if (date.month == 12) 1 else date.month + 1
+        val nextYear = if (date.month == 12) date.year + 1 else date.year
+        epochMsOf(nextYear, nextMonth, safeDay, 8, 0)
+    }
+}
+
+fun calculateInstallmentDueDate(startMs: Long, monthIndex: Int, dueDay: Int): Long {
+    val date = parseDateComponents(startMs)
+    val totalMonths = date.month + monthIndex
+    val targetYear = date.year + (totalMonths - 1) / 12
+    val targetMonth = ((totalMonths - 1) % 12) + 1
+    val safeDay = dueDay.coerceIn(1, 28)
+    return epochMsOf(targetYear, targetMonth, safeDay, 8, 0)
+}
+
 enum class RoutinePlanType(val label: String) {
     PERIODE("Periode"),
     TARGET_EMAS("Target emas"),
@@ -385,32 +439,139 @@ data class RoutineSavingsPlan(
             RoutinePlanType.PERIODE -> if (targetMonths > 0) (mutations.size.toDouble() / targetMonths) * 100.0 else 0.0
             RoutinePlanType.TARGET_EMAS -> if (targetGrams > 0.0) (savedGrams / targetGrams) * 100.0 else 0.0
         }
+
+    val hasTarget: Boolean
+        get() = when (type) {
+            RoutinePlanType.PERIODE -> targetMonths > 0
+            RoutinePlanType.TARGET_EMAS -> targetGrams > 0.0
+        }
+
+    val isPaused: Boolean get() = status == RoutinePlanStatus.PAUSED
 }
 
-enum class GoldBrand(val displayName: String) {
-    ANTAM("Antam"),
-    GALERI_24("Galeri 24"),
-    LM_REI("LM REI"),
+// ===== Konstanta & Perhitungan Cicil Emas (Handoff §11 & §14, Prototipe L3413-3416) =====
+
+const val CC_MIN_VAL = 500_000L
+const val CC_ADMIN_FEE = 25_000L
+const val CC_MARGIN_RATE = 0.009 // 0,9%/bulan flat
+const val CC_PARTNER_NAME = "BSI Finance"
+const val CC_LOCK_WINDOW_MIN = 15
+
+val CC_TENORS = listOf(3, 6, 12, 24)
+val CC_DPS = listOf(10, 20, 30)
+
+data class InstallmentCalculation(
+    val grams: Double,
+    val pricePerGram: Long,
+    val goldValue: Long,
+    val downPaymentPercent: Int,
+    val downPaymentAmount: Long,
+    val principal: Long,
+    val margin: Long,
+    val tenorMonths: Int,
+    val monthlyInstallment: Long,
+    val adminFee: Long = CC_ADMIN_FEE,
+) {
+    val totalDownPayment: Long get() = downPaymentAmount + adminFee
+    val totalFinancing: Long get() = principal + margin
 }
+
+fun calculateInstallment(
+    grams: Double,
+    pricePerGram: Long,
+    tenorMonths: Int,
+    downPaymentPercent: Int,
+): InstallmentCalculation {
+    val goldValue = kotlin.math.round(grams * pricePerGram).toLong()
+    val dpAmt = kotlin.math.round(goldValue * downPaymentPercent / 100.0).toLong()
+    val pokok = goldValue - dpAmt
+    val margin = kotlin.math.round(pokok * CC_MARGIN_RATE * tenorMonths).toLong()
+    val inst = kotlin.math.ceil((pokok + margin).toDouble() / tenorMonths).toLong()
+    return InstallmentCalculation(
+        grams = grams,
+        pricePerGram = pricePerGram,
+        goldValue = goldValue,
+        downPaymentPercent = downPaymentPercent,
+        downPaymentAmount = dpAmt,
+        principal = pokok,
+        margin = margin,
+        tenorMonths = tenorMonths,
+        monthlyInstallment = inst,
+        adminFee = CC_ADMIN_FEE,
+    )
+}
+
+data class InstallmentQuote(
+    val id: String,
+    val grams: Double,
+    val pricePerGram: Long,
+    val calculation: InstallmentCalculation,
+    val paymentMode: String = "auto",
+    val fundingSource: String = "kas",
+    val lockedAtMs: Long,
+    val expiresAtMs: Long,
+) {
+    fun isExpired(nowMs: Long): Boolean = nowMs >= expiresAtMs
+    fun secondsRemaining(nowMs: Long): Int = ((expiresAtMs - nowMs).coerceAtLeast(0L) / 1000L).toInt()
+}
+
+enum class GoldBrand(val key: String, val displayName: String, val certType: String, val serialPrefix: String) {
+    LM_REI("lmrei", "LM REI", "Sertifikat Raja Emas", "LMR"),
+    ANTAM("antam", "Antam", "CertiCard", "ANT"),
+    GALERI_24("g24", "Galeri 24", "Sertifikat Galeri 24", "G24");
+
+    companion object {
+        fun fromKey(k: String): GoldBrand = entries.firstOrNull { it.key.equals(k, ignoreCase = true) } ?: LM_REI
+    }
+}
+
+typealias PrintBrand = GoldBrand
 
 enum class PhysicalOrderStatus(val label: String) {
     WAITING_PAYMENT("Menunggu pembayaran"),
     CREATED("Pesanan dibuat"),
     PREPARING("Sedang disiapkan"),
+    SHIPPED_TO_BRANCH("Dikirim ke cabang"),
     IN_TRANSIT("Dikirim"),
     READY_PICKUP("Siap diambil"),
     DONE("Selesai"),
+    DELIVERED("Diterima");
+
+    val isDone: Boolean get() = this == DONE || this == DELIVERED
+    val isReadyPickup: Boolean get() = this == READY_PICKUP
 }
+
+data class GoldBranch(
+    val id: String,
+    val name: String,
+    val address: String,
+    val city: String,
+    val province: String,
+    val distanceKm: Double,
+    val openingHours: String,
+    val isSevenDays: Boolean,
+    val phone: String = "021-55667788",
+)
+
+data class GoldBarStock(
+    val brand: GoldBrand,
+    val weightGrams: Double,
+    val inStock: Boolean,
+)
 
 data class PhysicalPrintOrder(
     val id: String,
+    val orderNumber: String = id,
     val brand: GoldBrand,
     val weightGrams: Double,
     val quantity: Int = 1,
     val method: PrintMethod,
     val branchId: String? = null,
     val branchName: String? = null,
+    val branchAddress: String? = null,
     val destinationAddress: String? = null,
+    val recipientName: String? = null,
+    val recipientPhone: String? = null,
     val status: PhysicalOrderStatus,
     val ticketCode: String,
     val qrCodePayload: String,
@@ -418,10 +579,18 @@ data class PhysicalPrintOrder(
     val shippingInsuranceFee: Long = 0L,
     val totalPayment: Long,
     val serialNumber: String? = null,
+    val trackingNumber: String? = null,
     val pickupScheduleDate: String? = null,
     val pickupScheduleTimeSlot: String? = null,
+    val paymentMethod: PaymentMethod = PaymentMethod.WALLET,
     val createdAtMs: Long,
-)
+    val txId: String? = null,
+) {
+    val isPickup: Boolean get() = method == PrintMethod.BRANCH
+    val isDelivery: Boolean get() = method != PrintMethod.BRANCH
+}
+
+typealias GoldinPrintOrder = PhysicalPrintOrder
 
 data class InstallmentScheduleItem(
     val monthNumber: Int,
@@ -429,22 +598,36 @@ data class InstallmentScheduleItem(
     val amount: Long,
     val isPaid: Boolean,
     val paidAtMs: Long? = null,
+    val txId: String? = null,
 )
 
 data class GoldinInstallmentContract(
     val id: String,
-    val partner: String = "BSI Finance",
+    val partner: String = CC_PARTNER_NAME,
     val goldGrams: Double,
     val goldPriceAtAgreement: Long,
+    val goldValue: Long = 0L,
     val downPayment: Long,
-    val adminFee: Long = 25_000L,
+    val adminFee: Long = CC_ADMIN_FEE,
+    val principal: Long = 0L,
+    val margin: Long = 0L,
     val tenorMonths: Int,
+    val downPaymentPercent: Int = 20,
     val monthlyInstallment: Long,
-    val autoDebitMethod: String = "kas",
+    val paidMonths: Int = 0,
+    val paymentMode: String = "auto", // "auto" atau "manual"
+    val autoDebitSource: String = "kas", // "kas" atau id rekening bank
+    val dueDay: Int = 5, // 1..28
     val agreedAtMs: Long,
+    val status: String = "active", // "active", "done"
     val isPaidOff: Boolean = false,
     val schedule: List<InstallmentScheduleItem> = emptyList(),
-)
+) {
+    val isDone: Boolean get() = isPaidOff || status == "done" || paidMonths >= tenorMonths
+    val remainingPayment: Long get() = monthlyInstallment * (tenorMonths - paidMonths).coerceAtLeast(0)
+    val progressPercent: Double get() = if (tenorMonths > 0) (paidMonths.toDouble() / tenorMonths) * 100.0 else 0.0
+    val nextDueItem: InstallmentScheduleItem? get() = schedule.firstOrNull { !it.isPaid }
+}
 
 data class SavedAddress(
     val id: String,

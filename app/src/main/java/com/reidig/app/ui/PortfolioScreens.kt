@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -199,7 +198,7 @@ fun TokenDetailScreen(env: AppEnv, code: String, onBack: () -> Unit, onSold: () 
         onBack,
         bottom = if (token.status == TokenStatus.ACTIVE) {
             {
-                PrimaryButton("Jual ${rupiah(sku.buybackPrice)}", { confirmSell = true }, enabled = canSell)
+                PrimaryButton("Jual emas", { confirmSell = true }, enabled = canSell)
                 Spacer(Modifier.height(10.dp))
                 SecondaryButton("Cetak fisik keping ini", { onPrint(token.code) })
             }
@@ -243,29 +242,14 @@ fun TokenDetailScreen(env: AppEnv, code: String, onBack: () -> Unit, onSold: () 
     }
 
     if (confirmSell) {
-        AlertDialog(
-            onDismissRequest = { confirmSell = false },
-            title = { Text("Jual token ini?", fontFamily = TitleFontFamily, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text(
-                        "Keping ini akan dilepas dari portofolio Anda, dan dananya langsung masuk ke Saldo Kas.",
-                        fontFamily = BodyFontFamily,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    SummaryRow("Anda menerima", rupiah(sku.buybackPrice), strong = true, valueColor = Palette.Primary)
-                    if (sku.buybackPrice >= Rules.TAX_FREE_SELL_LIMIT) {
-                        Text(
-                            "Nilai Rp 10 juta atau lebih bisa dikenai pajak sesuai ketentuan.",
-                            color = Palette.Warn,
-                            fontFamily = BodyFontFamily,
-                            fontSize = 12.5.sp,
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextLink("Lanjut", { confirmSell = false; askPin = true }) },
-            dismissButton = { TextLink("Batal", { confirmSell = false }, color = Palette.InkSecondary) },
+        GoldinModal(
+            title = "Jual token ini?",
+            message = "Keping ini akan dilepas dari portofolio Anda, dan dananya langsung masuk ke Saldo Kas (${rupiah(sku.buybackPrice)}).",
+            confirmLabel = "Jual emas",
+            onConfirm = { confirmSell = false; askPin = true },
+            cancelLabel = "Batal",
+            onCancel = { confirmSell = false },
+            isDestructive = false,
         )
     }
     if (askPin) {
@@ -384,7 +368,7 @@ fun PrintScreen(env: AppEnv, initialToken: String?, onBack: (() -> Unit)?, onDon
     val pickupAllowed = Rules.isPickupEligible(totalMg)
     val effectiveMethod = if (method == PrintMethod.BRANCH && !pickupAllowed) PrintMethod.JNE else method
     val ready = selected.isNotEmpty() && when (effectiveMethod) {
-        PrintMethod.JNE -> address.isNotBlank()
+        PrintMethod.JNE, PrintMethod.DELIVERY -> address.isNotBlank()
         PrintMethod.BRANCH -> branchId != null
     }
 

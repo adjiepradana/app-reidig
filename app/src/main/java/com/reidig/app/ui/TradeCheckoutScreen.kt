@@ -62,6 +62,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reidig.app.R
+import com.reidig.shared.CC_PARTNER_NAME
 import com.reidig.shared.MockRepository
 import com.reidig.shared.PaymentMethod
 import com.reidig.shared.PRICE_LOCK_SECONDS
@@ -89,6 +90,7 @@ fun TradeCheckoutScreen(
     onBack: () -> Unit,
     onPayWait: (txId: String) -> Unit,
     onDone: (txId: String) -> Unit,
+    onInstallmentSim: ((Double) -> Unit)? = null,
 ) {
     val state by env.repo.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -504,6 +506,36 @@ fun TradeCheckoutScreen(
                             },
                             onSelect = { selectedMethod = PaymentMethod.QRIS },
                         )
+
+                        // 4.4 Pembiayaan Cicilan Emas
+                        if (onInstallmentSim != null) {
+                            Text(
+                                text = "Pembiayaan Cicilan",
+                                fontFamily = BodyFontFamily,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                                color = Palette.InkSecondary,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+
+                            TradePaymentMethodRadio(
+                                title = "Cicil Emas ($CC_PARTNER_NAME)",
+                                subtitle = "Mulai DP 10% · Tenor hingga 24 bln",
+                                isSelected = false,
+                                logoContent = {
+                                    Icon(
+                                        imageVector = PrototypeIcons.Calendar,
+                                        contentDescription = "Cicil Emas",
+                                        tint = Palette.Primary700,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                },
+                                onSelect = {
+                                    onInstallmentSim(quote.grams)
+                                },
+                            )
+                        }
                     }
                 } else {
                     // Card Dana Masuk ke Saldo Kas (Jika Jual)
@@ -587,11 +619,7 @@ fun TradeCheckoutScreen(
                     .padding(horizontal = GoldinSpace.Lg, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                val ctaText = when {
-                    !isBuy -> "Konfirmasi penjualan"
-                    selectedMethod == PaymentMethod.WALLET -> "Bayar ${rupiah(quote.total)}"
-                    else -> "Lanjut ke pembayaran"
-                }
+                val ctaText = if (isBuy) "Bayar" else "Jual emas"
 
                 val isCtaEnabled = !isLockExpired && !(isBuy && selectedMethod == PaymentMethod.WALLET && !canPayWithWallet)
 
@@ -606,12 +634,18 @@ fun TradeCheckoutScreen(
                     height = 44.dp,
                 )
 
+                val bottomHint = when {
+                    isLockExpired -> "Refresh harga untuk melanjutkan"
+                    isBuy && selectedMethod == PaymentMethod.WALLET && !canPayWithWallet -> "Saldo Kas tidak mencukupi"
+                    else -> "Harga terkunci 30 detik saat konfirmasi."
+                }
+
                 Text(
-                    text = "Harga terkunci 30 detik saat konfirmasi.",
+                    text = bottomHint,
                     fontFamily = BodyFontFamily,
                     fontSize = 12.sp,
                     lineHeight = 18.sp,
-                    color = Palette.InkSecondary,
+                    color = if (isLockExpired || (isBuy && selectedMethod == PaymentMethod.WALLET && !canPayWithWallet)) Palette.Critical else Palette.InkSecondary,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )

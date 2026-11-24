@@ -738,10 +738,14 @@ private fun GoldSavingsCard(
                 }
             }
 
-            // Optional: Terkunci (Cicilan)
+            // Optional: Terkunci (Cicilan) - Klik membuka daftar cicilan
             if (lockedGrams > 0.0) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(GoldinRadius.Sm))
+                        .clickable(onClick = onInstallmentList)
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

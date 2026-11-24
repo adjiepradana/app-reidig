@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -116,6 +119,23 @@ class RoutinePlanPrefillDraft {
         if (!hasPending) return null
         hasPending = false
         return monthlyAmount to targetGrams
+    }
+}
+
+/** Membawa state aliran pengajuan Cicil Emas (Screen 40-42). */
+class InstallmentApplicationDraft {
+    var grams: Double = 1.0
+    var tenorMonths: Int = 12
+    var dpPercent: Int = 20
+    var paymentMode: String = "auto"
+    var fundingSource: String = "kas"
+
+    fun reset(defaultGrams: Double = 1.0) {
+        grams = defaultGrams
+        tenorMonths = 12
+        dpPercent = 20
+        paymentMode = "auto"
+        fundingSource = "kas"
     }
 }
 
@@ -218,6 +238,14 @@ fun dateTime(ms: Long): String = DATE_FORMAT.format(Instant.ofEpochMilli(ms)) + 
 fun PinDialog(env: AppEnv, title: String, onDismiss: () -> Unit, onVerified: () -> Unit) {
     var code by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(Unit) {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(
             Modifier.fillMaxSize()

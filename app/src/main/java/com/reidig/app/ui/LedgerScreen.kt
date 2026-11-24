@@ -695,25 +695,25 @@ private fun LedgerTxRow(
         // Ikon bulat 40dp per jenis transaksi
         val iconBg = when (tx.type) {
             TxType.BUY, TxType.ROUTINE_DEBIT -> Palette.Primary50
+            TxType.INSTALLMENT -> Palette.Gold100
             TxType.SELL -> Palette.Gold50
             TxType.PRINT -> Palette.Info50
             TxType.TOPUP, TxType.WITHDRAW -> Palette.Neutral100
-            else -> Palette.Neutral100
         }
         val iconTint = when (tx.type) {
             TxType.BUY, TxType.ROUTINE_DEBIT -> Palette.Primary700
+            TxType.INSTALLMENT -> Palette.Gold700
             TxType.SELL -> Palette.Gold700
             TxType.PRINT -> Palette.Info700
             TxType.TOPUP, TxType.WITHDRAW -> Palette.Ink
-            else -> Palette.Ink
         }
         val iconVector = when (tx.type) {
             TxType.BUY, TxType.ROUTINE_DEBIT -> PrototypeIcons.Cart
+            TxType.INSTALLMENT -> PrototypeIcons.Calendar
             TxType.SELL -> PrototypeIcons.PriceTag
             TxType.PRINT -> PrototypeIcons.GoldIngots
             TxType.TOPUP -> PrototypeIcons.ArrowDownLeft
             TxType.WITHDRAW -> PrototypeIcons.ArrowUpRight
-            else -> PrototypeIcons.ArrowsExchange
         }
 
         Box(

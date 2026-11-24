@@ -21,6 +21,7 @@ class MockRepository(
     private val pending = mutableMapOf<String, PendingOrder>()
     private val applications = mutableMapOf<String, InstallmentApplication>()
     private val tradeQuotes = mutableMapOf<String, TradeQuote>()
+    private val installmentQuotes = mutableMapOf<String, InstallmentQuote>()
     private var pinAttempts = 0
     private var serialCounter = 500_000
     private var idCounter = 1
@@ -39,6 +40,17 @@ class MockRepository(
         Branch("bgr", "Bogor", "Bogor", "2–3 hari kerja", "Kota Bogor", "Jawa Barat", "Jl. Pajajaran No. 32, Bogor Tengah", 35.2, "Senin–Sabtu, 09.00–20.00 WIB"),
     )
 
+    val officialGoldBranches = listOf(
+        GoldBranch("kwc", "Raja Emas Karawaci", "Jl. Imam Bonjol No. 39, Karawaci", "Kota Tangerang", "Banten", 1.2, "Senin–Sabtu, 09.00–17.00 WIB", false),
+        GoldBranch("cpd", "Raja Emas Cipondoh", "Jl. KH Hasyim Ashari No. 21, Cipondoh", "Kota Tangerang", "Banten", 3.8, "Senin–Sabtu, 09.00–17.00 WIB", false),
+        GoldBranch("bsd", "Raja Emas BSD", "Jl. Pahlawan Seribu Kav. 3, Serpong", "Kota Tangerang Selatan", "Banten", 9.5, "Setiap hari, 10.00–20.00 WIB", true),
+        GoldBranch("kbj", "Raja Emas Kebon Jeruk", "Jl. Panjang No. 18, Kebon Jeruk", "Jakarta Barat", "DKI Jakarta", 11.2, "Senin–Sabtu, 09.00–17.00 WIB", false),
+        GoldBranch("blm", "Raja Emas Blok M", "Jl. Melawai Raya No. 8, Kebayoran Baru", "Jakarta Selatan", "DKI Jakarta", 19.6, "Setiap hari, 10.00–18.00 WIB", true),
+        GoldBranch("kgd", "Raja Emas Kelapa Gading", "Jl. Boulevard Raya Blok M No. 12, Kelapa Gading", "Jakarta Utara", "DKI Jakarta", 27.4, "Senin–Sabtu, 09.00–17.00 WIB", false),
+        GoldBranch("bks", "Raja Emas Bekasi", "Jl. Ahmad Yani No. 7, Bekasi Selatan", "Kota Bekasi", "Jawa Barat", 34.1, "Senin–Sabtu, 09.00–17.00 WIB", false),
+        GoldBranch("bgr", "Raja Emas Bogor", "Jl. Pajajaran No. 45, Bogor Tengah", "Kota Bogor", "Jawa Barat", 48.3, "Senin–Sabtu, 09.00–17.00 WIB", false),
+    )
+
     private fun nextId(prefix: String) = "$prefix-${idCounter++}"
 
     private fun fail(code: String, message: String): Nothing = throw ReidigException(code, message)
@@ -54,7 +66,7 @@ class MockRepository(
     // ----- Akun -----
 
     /** Akun contoh yang sudah terverifikasi, sesuai prototipe Goldin v1.2 (reiuser@gmail.com). */
-    fun login(email: String, password: String) {
+    fun login(email: String, password: String = GOLDIN_DEMO_PASSWORD) {
         if (!Rules.isValidEmail(email) || password.isEmpty()) {
             fail("INVALID_CREDENTIALS", "Email atau kata sandi salah")
         }
@@ -72,7 +84,7 @@ class MockRepository(
 
     fun loginWithGoogle() = startDemoAccount(GOLDIN_DEMO_EMAIL)
 
-    fun startDemoAccount(email: String = "reiuser@gmail.com") {
+    fun startDemoAccount(email: String = GOLDIN_DEMO_EMAIL) {
         val now = clock()
         val oneDayAgo = now - 24L * 3600 * 1000
         val fourDaysAgo = now - 4L * 24L * 3600 * 1000
@@ -250,6 +262,52 @@ class MockRepository(
             addedAtMs = now - 30 * 86400000L,
         )
 
+        val seededReadyPickupOrder = PhysicalPrintOrder(
+            id = "CTK-DEMO-01",
+            orderNumber = "CTK-20261120-001",
+            brand = GoldBrand.LM_REI,
+            weightGrams = 1.0,
+            quantity = 1,
+            method = PrintMethod.BRANCH,
+            branchId = "kwc",
+            branchName = "Raja Emas Karawaci",
+            branchAddress = "Jl. Imam Bonjol No. 39, Karawaci, Kota Tangerang",
+            status = PhysicalOrderStatus.READY_PICKUP,
+            ticketCode = "TKT-REI-839102",
+            qrCodePayload = "GOLDIN:PRINT:CTK-DEMO-01:TKT-REI-839102",
+            printFee = 50_000L,
+            shippingInsuranceFee = 0L,
+            totalPayment = 50_000L,
+            serialNumber = "LMR-9081234",
+            pickupScheduleDate = "Selasa, 24 Nov 2026",
+            pickupScheduleTimeSlot = "10.00–11.00 WIB",
+            paymentMethod = PaymentMethod.WALLET,
+            createdAtMs = now - 2 * 86400000L,
+        )
+
+        val seededCompletedOrder = PhysicalPrintOrder(
+            id = "CTK-DEMO-02",
+            orderNumber = "CTK-20261110-002",
+            brand = GoldBrand.ANTAM,
+            weightGrams = 2.0,
+            quantity = 1,
+            method = PrintMethod.BRANCH,
+            branchId = "bsd",
+            branchName = "Raja Emas BSD",
+            branchAddress = "Jl. Pahlawan Seribu Kav. 3, Serpong",
+            status = PhysicalOrderStatus.DONE,
+            ticketCode = "TKT-REI-102948",
+            qrCodePayload = "GOLDIN:PRINT:CTK-DEMO-02:TKT-REI-102948",
+            printFee = 50_000L,
+            shippingInsuranceFee = 0L,
+            totalPayment = 50_000L,
+            serialNumber = "ANT-8391024",
+            pickupScheduleDate = "Rabu, 11 Nov 2026",
+            pickupScheduleTimeSlot = "14.00–15.00 WIB",
+            paymentMethod = PaymentMethod.WALLET,
+            createdAtMs = now - 12 * 86400000L,
+        )
+
         _state.update { current ->
             val oneGram = current.sku("LMRE-1G")
             val halfGram = current.sku("LMRE-0.5G")
@@ -284,6 +342,7 @@ class MockRepository(
                 savedAddresses = listOf(seededAddress),
                 routinePlans = listOf(seededPlan),
                 notifications = seededNotifications,
+                physicalOrders = listOf(seededReadyPickupOrder, seededCompletedOrder),
                 isAccountLocked = false,
                 pinLockLevel = 0,
                 pinFailedAttempts = 0,
@@ -291,13 +350,7 @@ class MockRepository(
         }
     }
 
-    fun register(
-        name: String,
-        email: String,
-        password: String = GOLDIN_DEMO_PASSWORD,
-        username: String = "",
-        birthDate: String? = null,
-    ) {
+    fun register(name: String, email: String, password: String = GOLDIN_DEMO_PASSWORD, username: String = "", birthDate: String? = null) {
         val cleanName = name.trim()
         val cleanEmail = email.trim()
         val cleanUsername = Rules.normalizeUsername(username).ifBlank {
@@ -364,14 +417,7 @@ class MockRepository(
         }
     }
 
-    fun submitKycPending(
-        pin: String? = null,
-        fullName: String? = null,
-        phone: String? = null,
-        birthDate: String? = null,
-        nik: String? = null,
-        biometricEnabled: Boolean? = null,
-    ) {
+    fun submitKycPending(pin: String? = null, fullName: String? = null, phone: String? = null, birthDate: String? = null, nik: String? = null, biometricEnabled: Boolean? = null) {
         if (pin != null) {
             Rules.pinValidationError(pin, birthDate)?.let { fail("WEAK_PIN", it) }
         }
@@ -634,26 +680,17 @@ class MockRepository(
 
     // ----- Beli / Jual Langsung Gramasi & Siklus Price-Lock (Goldin v1.2 — Handoff §7 & §14) -----
 
-    fun calculateTrade(
-        isBuy: Boolean,
-        inputGrams: Double? = null,
-        inputSubtotal: Long? = null,
-        customPrice: Long? = null,
-    ): TradeCalculation {
+    fun calculateTrade(isBuy: Boolean, inputGrams: Double? = null, inputSubtotal: Long? = null, customPrice: Long? = null): TradeCalculation {
         val price = customPrice ?: if (isBuy) _state.value.askPricePerGram else _state.value.buybackPerGram
         return calculateTradeAmounts(isBuy, price, inputGrams, inputSubtotal)
     }
 
-    fun createTradeQuote(
-        isBuy: Boolean,
-        inputGrams: Double? = null,
-        inputSubtotal: Long? = null,
-    ): TradeQuote {
+    fun createTradeQuote(isBuy: Boolean, inputGrams: Double? = null, inputSubtotal: Long? = null): TradeQuote {
         val state = _state.value
         val user = state.user ?: fail("UNAUTHENTICATED", "Silakan masuk terlebih dahulu.")
         if (!user.verified && !user.isKycPending) fail("KYC_REQUIRED", "Verifikasi identitas diperlukan sebelum transaksi.")
 
-        val calc = calculateTrade(isBuy, inputGrams, inputSubtotal)
+        val calc = calculateTrade(isBuy, inputGrams, inputSubtotal, null)
         if (calc.subtotal < MIN_TRADE_RP) fail("INVALID_AMOUNT", "Minimal transaksi ${rupiah(MIN_TRADE_RP)}.")
         if (!isBuy && calc.grams > state.freeGoldGrams) {
             fail("INSUFFICIENT_GOLD", "Saldo emas bebas tidak mencukupi.")
@@ -880,7 +917,7 @@ class MockRepository(
         return completedTx
     }
 
-    fun cancelTradeOrder(txId: String, reason: String = "Dibatalkan oleh pengguna"): Tx {
+    fun cancelTradeOrder(txId: String, reason: String = ""): Tx {
         val state = _state.value
         val tx = state.transactions.firstOrNull { it.id == txId } ?: fail("TX_NOT_FOUND", "Transaksi tidak ditemukan.")
         val cancelledTx = tx.copy(status = "fail", failureReason = reason)
@@ -937,7 +974,7 @@ class MockRepository(
         val user = state.user ?: fail("UNAUTHENTICATED", "Silakan masuk terlebih dahulu.")
         if (!user.verified) fail("KYC_REQUIRED", "Verifikasi identitas diperlukan sebelum membeli.")
         if (nominal < MIN_TRADE_RP) fail("INVALID", "Minimal transaksi ${rupiah(MIN_TRADE_RP)}.")
-        val calc = calculateTrade(isBuy = true, inputSubtotal = nominal)
+        val calc = calculateTrade(isBuy = true, inputGrams = null, inputSubtotal = nominal, customPrice = null)
         if (method == PaymentMethod.WALLET && state.walletBalance < calc.total) {
             fail("INSUFFICIENT_BALANCE", "Saldo Kas tidak mencukupi.")
         }
@@ -990,7 +1027,7 @@ class MockRepository(
         if (!user.verified) fail("KYC_REQUIRED", "Verifikasi identitas diperlukan sebelum menjual.")
         if (grams <= 0.0) fail("INVALID", "Masukkan berat emas yang valid.")
         if (grams > state.freeGoldGrams) fail("INSUFFICIENT_GOLD", "Saldo emas bebas tidak mencukupi.")
-        val calc = calculateTrade(isBuy = false, inputGrams = grams)
+        val calc = calculateTrade(isBuy = false, inputGrams = grams, inputSubtotal = null, customPrice = null)
         val now = clock()
         val ymdDate = formatYmd(now)
         val randomSuffix = (random.nextInt(100_000, 999_999)).toString()
@@ -1100,11 +1137,14 @@ class MockRepository(
     }
 
     /** Mensimulasikan pembayaran Top Up Virtual Account berhasil (+Rp500.000 saldo kas per prototipe L2114) */
-    fun simulateVaTopupSuccess(txId: String, amount: Long = 500_000L): Tx {
+    fun simulateVaTopupSuccess(txId: String, amount: Long): Tx {
         val now = clock()
         val existing = _state.value.transactions.firstOrNull { it.id == txId }
-        val effectiveAmount = existing?.amount ?: amount
+        val effectiveAmount = amount
         val updatedTx = existing?.copy(
+            amount = effectiveAmount,
+            subtotal = effectiveAmount,
+            total = effectiveAmount + TOPUP_FEE,
             status = "ok",
             settledAtMs = now,
         ) ?: Tx(
@@ -1239,7 +1279,7 @@ class MockRepository(
     }
 
     /** Memverifikasi dan menambahkan rekening bank nasabah (Handoff §9 L101) */
-    fun verifyAndAddBankAccount(bank: String, number: String, holder: String = ""): BankAccount {
+    fun verifyAndAddBankAccount(bank: String, number: String, holder: String = "Pengguna"): BankAccount {
         val state = _state.value
         val cleanNumber = number.filter { it.isDigit() }
         if (cleanNumber.length < 6) {
@@ -1268,7 +1308,7 @@ class MockRepository(
         return newAccount
     }
 
-    fun addBankAccount(bank: String, number: String, holder: String) {
+    fun addBankAccount(bank: String, number: String, holder: String = "Pengguna") {
         verifyAndAddBankAccount(bank, number, holder)
     }
 
@@ -1284,7 +1324,7 @@ class MockRepository(
     }
 
     /** Mengaktifkan fitur Auto-Debit pada rekening bank tertentu melalui verifikasi SMS OTP (Handoff §9 L103) */
-    fun toggleAutoDebit(bankAccountId: String, otpCode: String = "123456"): Boolean {
+    fun toggleAutoDebit(bankAccountId: String, otpCode: String): Boolean {
         if (otpCode.trim() != "123456") {
             fail("INVALID_OTP", "Kode OTP salah atau telah kadaluarsa.")
         }
@@ -1417,15 +1457,7 @@ class MockRepository(
 
     // ----- Tabungan Rutin -----
 
-    fun createRoutinePlan(
-        name: String,
-        type: RoutinePlanType,
-        targetMonths: Int,
-        targetGrams: Double,
-        monthlyAmount: Long,
-        debitDate: Int,
-        source: String,
-    ): RoutineSavingsPlan {
+    fun createRoutinePlan(name: String, type: RoutinePlanType, targetMonths: Int, targetGrams: Double, monthlyAmount: Long, debitDate: Int, source: String): RoutineSavingsPlan {
         if (monthlyAmount < 10_000L) fail("INVALID", "Minimal nominal per bulan Rp10.000.")
         if (debitDate !in 1..28) fail("INVALID", "Tanggal debit harus antara 1 sampai 28.")
         val now = clock()
@@ -1460,6 +1492,65 @@ class MockRepository(
 
     fun stopRoutinePlan(planId: String) {
         _state.update { s -> s.copy(routinePlans = s.routinePlans.filterNot { it.id == planId }) }
+    }
+
+    fun getRoutinePlan(planId: String): RoutineSavingsPlan? =
+        _state.value.routinePlans.firstOrNull { it.id == planId }
+
+    fun executeRoutineDebit(planId: String): Tx {
+        val s = _state.value
+        val plan = s.routinePlans.firstOrNull { it.id == planId } ?: fail("PLAN_NOT_FOUND", "Plan tidak ditemukan.")
+        if (plan.status == RoutinePlanStatus.PAUSED) fail("PLAN_PAUSED", "Plan tabungan sedang dijeda.")
+        if (s.walletBalance < plan.monthlyAmount) fail("INSUFFICIENT_BALANCE", "Saldo kas tidak mencukupi untuk auto-debit.")
+
+        val now = clock()
+        val grams = floorGrams4(plan.monthlyAmount.toDouble() / s.askPricePerGram)
+        val mutation = RoutineMutation(
+            id = nextId("MUT"),
+            planId = plan.id,
+            atMs = now,
+            grams = grams,
+            amount = plan.monthlyAmount,
+            pricePerGram = s.askPricePerGram,
+            method = "Tabungan rutin",
+        )
+        val tx = Tx(
+            id = nextId("TX"),
+            type = TxType.BUY,
+            title = "Tabungan rutin: ${plan.name}",
+            amount = -plan.monthlyAmount,
+            atMs = now,
+            subtotal = plan.monthlyAmount,
+            grams = grams,
+            pricePerGram = s.askPricePerGram,
+            method = "Tabungan rutin",
+            planId = plan.id,
+        )
+        val notif = NotificationItem(
+            id = nextId("NOTIF"),
+            category = NotificationCategory.TRANSACTION,
+            title = "Debit tabungan rutin berhasil",
+            message = "Berhasil menabung ${formatGrams4(grams)} gr untuk ${plan.name}",
+            atMs = now,
+            txId = tx.id,
+        )
+
+        _state.update { curr ->
+            val updatedPlans = curr.routinePlans.map {
+                if (it.id == planId) it.copy(
+                    savedGrams = floorGrams4(it.savedGrams + grams),
+                    mutations = listOf(mutation) + it.mutations,
+                ) else it
+            }
+            curr.copy(
+                walletBalance = curr.walletBalance - plan.monthlyAmount,
+                goldBalanceGrams = floorGrams4(curr.goldBalanceGrams + grams),
+                routinePlans = updatedPlans,
+                transactions = listOf(tx) + curr.transactions,
+                notifications = listOf(notif) + curr.notifications,
+            )
+        }
+        return tx
     }
 
     // ----- Beranda: Visibilitas Saldo & Refresh Harga Emas -----
@@ -1548,7 +1639,7 @@ class MockRepository(
         val branch = branches.firstOrNull { it.id == branchId }
         val destination = when (method) {
             PrintMethod.BRANCH -> branch?.let { "Cabang ${it.name}" } ?: fail("INVALID", "Pilih cabang pengambilan.")
-            PrintMethod.JNE -> address?.trim()?.takeIf { it.isNotEmpty() } ?: fail("INVALID", "Isi alamat pengiriman.")
+            PrintMethod.JNE, PrintMethod.DELIVERY -> address?.trim()?.takeIf { it.isNotEmpty() } ?: fail("INVALID", "Isi alamat pengiriman.")
         }
         if (method == PrintMethod.BRANCH && !Rules.isPickupEligible(total)) {
             fail("PICKUP_MIN_WEIGHT_NOT_MET", "Minimal berat untuk ambil di cabang adalah 2 gram.")
@@ -1633,6 +1724,408 @@ class MockRepository(
     fun downPaymentCode(method: PaymentMethod): String = when (method) {
         PaymentMethod.QRIS -> "QR-" + random.nextInt(100000, 999999)
         else -> "70070" + random.nextLong(100000000L, 999999999L)
+    }
+
+    fun createInstallmentQuote(
+        grams: Double,
+        tenorMonths: Int,
+        dpPercent: Int,
+        paymentMode: String = "auto",
+        fundingSource: String = "kas",
+    ): InstallmentQuote {
+        val s = _state.value
+        val goldValue = kotlin.math.round(grams * s.askPricePerGram).toLong()
+        if (goldValue < CC_MIN_VAL) fail("INVALID_AMOUNT", "Minimal harga emas Rp500.000 untuk pengajuan cicil.")
+        val calc = calculateInstallment(grams, s.askPricePerGram, tenorMonths, dpPercent)
+        val now = clock()
+        val quote = InstallmentQuote(
+            id = nextId("CCQ"),
+            grams = grams,
+            pricePerGram = s.askPricePerGram,
+            calculation = calc,
+            paymentMode = paymentMode,
+            fundingSource = fundingSource,
+            lockedAtMs = now,
+            expiresAtMs = now + CC_LOCK_WINDOW_MIN * 60 * 1000L,
+        )
+        installmentQuotes[quote.id] = quote
+        return quote
+    }
+
+    fun getInstallmentQuote(quoteId: String): InstallmentQuote? = installmentQuotes[quoteId]
+
+    fun verifyScoring(quoteId: String, isSimulatedPass: Boolean): Boolean {
+        if (!installmentQuotes.containsKey(quoteId)) fail("ORDER_NOT_FOUND", "Pengajuan tidak ditemukan.")
+        return isSimulatedPass
+    }
+
+    fun signAndPayInstallmentAkad(
+        quoteId: String,
+        smsOtp: String,
+        paymentMethod: PaymentMethod,
+        pin: String,
+    ): GoldinInstallmentContract {
+        val quote = installmentQuotes[quoteId] ?: fail("ORDER_NOT_FOUND", "Pengajuan tidak ditemukan.")
+        if (smsOtp != "123456") fail("INVALID_OTP", "Kode OTP SMS salah.")
+        if (!verifyPin(pin)) fail("WRONG_PIN", "PIN salah. Coba lagi.")
+
+        val s = _state.value
+        val totalDp = quote.calculation.totalDownPayment
+        if (paymentMethod == PaymentMethod.WALLET && s.walletBalance < totalDp) {
+            fail("INSUFFICIENT_BALANCE", "Saldo kas tidak mencukupi untuk pembayaran uang muka.")
+        }
+
+        val now = clock()
+        val schedule = (1..quote.calculation.tenorMonths).map { monthIdx ->
+            InstallmentScheduleItem(
+                monthNumber = monthIdx,
+                dueDateMs = calculateInstallmentDueDate(now, monthIdx, 5),
+                amount = quote.calculation.monthlyInstallment,
+                isPaid = false,
+            )
+        }
+
+        val contract = GoldinInstallmentContract(
+            id = nextId("CTR"),
+            partner = CC_PARTNER_NAME,
+            goldGrams = quote.grams,
+            goldPriceAtAgreement = quote.pricePerGram,
+            goldValue = quote.calculation.goldValue,
+            downPayment = quote.calculation.downPaymentAmount,
+            adminFee = quote.calculation.adminFee,
+            principal = quote.calculation.principal,
+            margin = quote.calculation.margin,
+            tenorMonths = quote.calculation.tenorMonths,
+            downPaymentPercent = quote.calculation.downPaymentPercent,
+            monthlyInstallment = quote.calculation.monthlyInstallment,
+            paidMonths = 0,
+            paymentMode = quote.paymentMode,
+            autoDebitSource = quote.fundingSource,
+            dueDay = 5,
+            agreedAtMs = now,
+            status = "active",
+            isPaidOff = false,
+            schedule = schedule,
+        )
+
+        val tx = Tx(
+            id = nextId("TX"),
+            type = TxType.INSTALLMENT,
+            title = "Uang muka cicil emas ${formatGrams4(quote.grams)} gr",
+            amount = if (paymentMethod == PaymentMethod.WALLET) -totalDp else 0L,
+            atMs = now,
+            subtotal = totalDp,
+            grams = quote.grams,
+        )
+
+        val notif = NotificationItem(
+            id = nextId("NOTIF"),
+            category = NotificationCategory.TRANSACTION,
+            title = "Pengajuan cicil emas disetujui",
+            message = "Kontrak cicil emas ${formatGrams4(quote.grams)} gr telah aktif.",
+            atMs = now,
+            txId = tx.id,
+        )
+
+        _state.update { curr ->
+            curr.copy(
+                walletBalance = if (paymentMethod == PaymentMethod.WALLET) curr.walletBalance - totalDp else curr.walletBalance,
+                lockedGoldGrams = floorGrams4(curr.lockedGoldGrams + quote.grams),
+                installmentContracts = listOf(contract) + curr.installmentContracts,
+                transactions = listOf(tx) + curr.transactions,
+                notifications = listOf(notif) + curr.notifications,
+            )
+        }
+
+        installmentQuotes.remove(quoteId)
+        return contract
+    }
+
+    fun getInstallmentContract(contractId: String): GoldinInstallmentContract? =
+        _state.value.installmentContracts.firstOrNull { it.id == contractId }
+
+    fun payInstallmentMonthly(
+        contractId: String,
+        paymentMethod: PaymentMethod,
+        pin: String,
+    ): GoldinInstallmentContract {
+        val s = _state.value
+        val contract = s.installmentContracts.firstOrNull { it.id == contractId }
+            ?: fail("ORDER_NOT_FOUND", "Kontrak cicil tidak ditemukan.")
+        if (contract.isDone || contract.paidMonths >= contract.tenorMonths) {
+            fail("ALREADY_PAID", "Cicilan sudah lunas.")
+        }
+        if (!verifyPin(pin)) fail("WRONG_PIN", "PIN salah. Coba lagi.")
+
+        val amount = contract.monthlyInstallment
+        if (paymentMethod == PaymentMethod.WALLET && s.walletBalance < amount) {
+            fail("INSUFFICIENT_BALANCE", "Saldo Kas tidak cukup untuk membayar angsuran.")
+        }
+
+        val now = clock()
+        val nextMonth = contract.paidMonths + 1
+        val isDone = nextMonth >= contract.tenorMonths
+
+        val tx = Tx(
+            id = nextId("TX"),
+            type = TxType.INSTALLMENT,
+            title = "Angsuran ke-$nextMonth cicil emas ${formatGrams4(contract.goldGrams)} gr",
+            amount = if (paymentMethod == PaymentMethod.WALLET) -amount else 0L,
+            atMs = now,
+            subtotal = amount,
+        )
+
+        var updated: GoldinInstallmentContract? = null
+
+        _state.update { curr ->
+            val list = curr.installmentContracts.map {
+                if (it.id == contractId) {
+                    val newSchedule = it.schedule.map { item ->
+                        if (item.monthNumber == nextMonth) item.copy(isPaid = true, paidAtMs = now, txId = tx.id)
+                        else item
+                    }
+                    val u = it.copy(
+                        paidMonths = nextMonth,
+                        status = if (isDone) "done" else "active",
+                        isPaidOff = isDone,
+                        schedule = newSchedule,
+                    )
+                    updated = u
+                    u
+                } else it
+            }
+
+            val notifs = if (isDone) {
+                listOf(
+                    NotificationItem(
+                        id = nextId("NOTIF"),
+                        category = NotificationCategory.TRANSACTION,
+                        title = "Cicilan emas lunas",
+                        message = "Selamat! Cicilan emas ${formatGrams4(contract.goldGrams)} gr telah lunas dan kini masuk ke portofolio aktif.",
+                        atMs = now,
+                    )
+                ) + curr.notifications
+            } else curr.notifications
+
+            curr.copy(
+                walletBalance = if (paymentMethod == PaymentMethod.WALLET) curr.walletBalance - amount else curr.walletBalance,
+                lockedGoldGrams = if (isDone) floorGrams4((curr.lockedGoldGrams - contract.goldGrams).coerceAtLeast(0.0)) else curr.lockedGoldGrams,
+                goldBalanceGrams = if (isDone) floorGrams4(curr.goldBalanceGrams + contract.goldGrams) else curr.goldBalanceGrams,
+                installmentContracts = list,
+                transactions = listOf(tx) + curr.transactions,
+                notifications = notifs,
+            )
+        }
+
+        return updated ?: contract
+    }
+
+    fun payoffInstallmentContract(
+        contractId: String,
+        paymentMethod: PaymentMethod,
+        pin: String,
+    ): GoldinInstallmentContract {
+        val s = _state.value
+        val contract = s.installmentContracts.firstOrNull { it.id == contractId }
+            ?: fail("ORDER_NOT_FOUND", "Kontrak cicil tidak ditemukan.")
+        if (contract.isDone || contract.paidMonths >= contract.tenorMonths) {
+            fail("ALREADY_PAID", "Cicilan sudah lunas.")
+        }
+        if (!verifyPin(pin)) fail("WRONG_PIN", "PIN salah. Coba lagi.")
+
+        val remainingMonths = contract.tenorMonths - contract.paidMonths
+        val remainingTotal = contract.monthlyInstallment * remainingMonths
+        if (paymentMethod == PaymentMethod.WALLET && s.walletBalance < remainingTotal) {
+            fail("INSUFFICIENT_BALANCE", "Saldo Kas tidak cukup untuk pelunasan dipercepat.")
+        }
+
+        val now = clock()
+        val tx = Tx(
+            id = nextId("TX"),
+            type = TxType.INSTALLMENT,
+            title = "Pelunasan dipercepat cicil emas ${formatGrams4(contract.goldGrams)} gr",
+            amount = if (paymentMethod == PaymentMethod.WALLET) -remainingTotal else 0L,
+            atMs = now,
+            subtotal = remainingTotal,
+        )
+
+        var updated: GoldinInstallmentContract? = null
+
+        _state.update { curr ->
+            val list = curr.installmentContracts.map {
+                if (it.id == contractId) {
+                    val newSchedule = it.schedule.map { item ->
+                        if (!item.isPaid) item.copy(isPaid = true, paidAtMs = now, txId = tx.id)
+                        else item
+                    }
+                    val u = it.copy(
+                        paidMonths = it.tenorMonths,
+                        status = "done",
+                        isPaidOff = true,
+                        schedule = newSchedule,
+                    )
+                    updated = u
+                    u
+                } else it
+            }
+
+            val notif = NotificationItem(
+                id = nextId("NOTIF"),
+                category = NotificationCategory.TRANSACTION,
+                title = "Cicilan emas lunas",
+                message = "Selamat! Cicilan emas ${formatGrams4(contract.goldGrams)} gr telah lunas dan kini masuk ke portofolio aktif.",
+                atMs = now,
+                txId = tx.id,
+            )
+
+            curr.copy(
+                walletBalance = if (paymentMethod == PaymentMethod.WALLET) curr.walletBalance - remainingTotal else curr.walletBalance,
+                lockedGoldGrams = floorGrams4((curr.lockedGoldGrams - contract.goldGrams).coerceAtLeast(0.0)),
+                goldBalanceGrams = floorGrams4(curr.goldBalanceGrams + contract.goldGrams),
+                installmentContracts = list,
+                transactions = listOf(tx) + curr.transactions,
+                notifications = listOf(notif) + curr.notifications,
+            )
+        }
+
+        return updated ?: contract
+    }
+
+    // =========================================================================================
+    // CETAK EMAS FISIK & RESERVASI CABANG RAJA EMAS (TAHAP 9)
+    // =========================================================================================
+
+    fun getGoldBranches(): List<GoldBranch> = officialGoldBranches
+
+    fun getGoldBranch(id: String): GoldBranch? = officialGoldBranches.firstOrNull { it.id == id }
+
+    fun getGoldBarStock(): List<GoldBarStock> {
+        val sizes = listOf(1.0, 2.0, 3.0, 5.0, 10.0, 25.0, 50.0, 100.0)
+        return GoldBrand.entries.flatMap { brand ->
+            sizes.map { size ->
+                val inStock = isStockAvailable(brand, size)
+                GoldBarStock(brand, size, inStock)
+            }
+        }
+    }
+
+    fun isStockAvailable(brand: GoldBrand, weightGrams: Double): Boolean {
+        val weight = weightGrams.toInt()
+        if (brand == GoldBrand.ANTAM && weight == 50) return false
+        if (brand == GoldBrand.GALERI_24 && (weight == 3 || weight == 100)) return false
+        return true
+    }
+
+    fun getPhysicalPrintOrders(): List<PhysicalPrintOrder> = _state.value.physicalOrders
+
+    fun getPhysicalPrintOrder(id: String): PhysicalPrintOrder? = _state.value.physicalOrders.firstOrNull { it.id == id }
+
+    fun createPhysicalPrintOrder(brand: GoldBrand, weightGrams: Double, method: PrintMethod, branchId: String? = null, deliveryAddress: String? = null, recipientName: String? = null, recipientPhone: String? = null, paymentMethod: PaymentMethod = PaymentMethod.WALLET, pin: String): PhysicalPrintOrder {
+        val s = _state.value
+        if (weightGrams <= 0.0) fail("INVALID", "Berat keping emas tidak valid.")
+        if (!isStockAvailable(brand, weightGrams)) fail("OUT_OF_STOCK", "Stok keping ini sedang habis.")
+        if (s.freeGoldGrams < weightGrams) fail("INSUFFICIENT_GOLD", "Saldo emas bebas tidak mencukupi untuk cetak.")
+        if (!verifyPin(pin)) fail("WRONG_PIN", "PIN salah. Coba lagi.")
+
+        val isBranch = method == PrintMethod.BRANCH
+        val branch = if (isBranch) getGoldBranch(branchId ?: "kwc") ?: officialGoldBranches.first() else null
+        val printFee = 50_000L
+        val shippingFee = if (isBranch) 0L else 35_000L
+        val totalFee = printFee + shippingFee
+
+        if (paymentMethod == PaymentMethod.WALLET && s.walletBalance < totalFee) {
+            fail("INSUFFICIENT_BALANCE", "Saldo Kas tidak cukup untuk membayar biaya cetak.")
+        }
+
+        val now = clock()
+        val orderId = nextId("CTK")
+        val serialNumber = brand.serialPrefix + "-" + ((serialCounter++) % 9000000 + 1000000)
+        val ticketCode = "TKT-REI-" + ((serialCounter * 3) % 900000 + 100000)
+        val qrPayload = "GOLDIN:PRINT:$orderId:$ticketCode"
+        val trackingNumber = if (!isBranch) "RE" + ((serialCounter * 7) % 9000000000L + 1000000000L) else null
+
+        val tx = Tx(
+            id = nextId("TX"),
+            type = TxType.WITHDRAW,
+            title = "Cetak emas ${brand.displayName} ${formatGrams4(weightGrams)} gr",
+            amount = if (paymentMethod == PaymentMethod.WALLET) -totalFee else 0L,
+            atMs = now,
+        )
+
+        val notif = NotificationItem(
+            id = nextId("NOTIF"),
+            category = NotificationCategory.TRANSACTION,
+            title = "Pesanan cetak emas dibuat",
+            message = "Pesanan cetak ${brand.displayName} ${formatGrams4(weightGrams)} gr berhasil dibuat.",
+            atMs = now,
+            txId = tx.id,
+        )
+
+        val order = PhysicalPrintOrder(
+            id = orderId,
+            orderNumber = orderId,
+            brand = brand,
+            weightGrams = weightGrams,
+            quantity = 1,
+            method = method,
+            branchId = branch?.id,
+            branchName = branch?.name,
+            branchAddress = branch?.address,
+            destinationAddress = deliveryAddress,
+            recipientName = recipientName ?: s.user?.name,
+            recipientPhone = recipientPhone ?: s.user?.phone,
+            status = PhysicalOrderStatus.CREATED,
+            ticketCode = ticketCode,
+            qrCodePayload = qrPayload,
+            printFee = printFee,
+            shippingInsuranceFee = shippingFee,
+            totalPayment = totalFee,
+            serialNumber = serialNumber,
+            trackingNumber = trackingNumber,
+            pickupScheduleDate = null,
+            pickupScheduleTimeSlot = null,
+            paymentMethod = paymentMethod,
+            createdAtMs = now,
+            txId = tx.id,
+        )
+
+        _state.update { curr ->
+            curr.copy(
+                goldBalanceGrams = floorGrams4((curr.goldBalanceGrams - weightGrams).coerceAtLeast(0.0)),
+                walletBalance = if (paymentMethod == PaymentMethod.WALLET) curr.walletBalance - totalFee else curr.walletBalance,
+                physicalOrders = listOf(order) + curr.physicalOrders,
+                transactions = listOf(tx) + curr.transactions,
+                notifications = listOf(notif) + curr.notifications,
+            )
+        }
+
+        return order
+    }
+
+    fun updatePickupSchedule(orderId: String, date: String, slot: String): PhysicalPrintOrder {
+        var updated: PhysicalPrintOrder? = null
+        _state.update { curr ->
+            val list = curr.physicalOrders.map {
+                if (it.id == orderId) {
+                    val u = it.copy(pickupScheduleDate = date, pickupScheduleTimeSlot = slot)
+                    updated = u
+                    u
+                } else it
+            }
+            curr.copy(physicalOrders = list)
+        }
+        return updated ?: fail("ORDER_NOT_FOUND", "Pesanan cetak tidak ditemukan.")
+    }
+
+    fun addSavedAddress(address: SavedAddress) {
+        _state.update { curr ->
+            val updatedList = if (address.isPrimary) {
+                curr.savedAddresses.map { it.copy(isPrimary = false) } + address
+            } else {
+                curr.savedAddresses + address
+            }
+            curr.copy(savedAddresses = updatedList)
+        }
     }
 
     companion object {

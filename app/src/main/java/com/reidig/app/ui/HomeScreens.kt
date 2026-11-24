@@ -43,11 +43,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.QrCode2
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -169,7 +164,7 @@ fun HomeScreen(
     onBuy: () -> Unit,
     onSell: () -> Unit,
     onPrint: () -> Unit,
-    @Suppress("UNUSED_PARAMETER") onInstallment: () -> Unit,
+    onInstallment: () -> Unit,
     onWithdraw: () -> Unit,
     onVerify: () -> Unit,
     onPrices: () -> Unit,
@@ -729,6 +724,26 @@ fun HomeScreen(
                                 onCreateRoutinePlan()
                             }
                         },
+                    )
+                }
+            }
+
+            // 8. Seksi Cicil Emas (Screen 40 / 46 Entry Point)
+            val installmentContracts = if (isVerified) state.installmentContracts else emptyList()
+            val showInstallmentSection = installmentContracts.isNotEmpty() || !isKycPending
+            if (showInstallmentSection) {
+                HorizontalDivider(
+                    thickness = GoldinBorder.Hairline,
+                    color = Palette.Line,
+                )
+                if (installmentContracts.isNotEmpty()) {
+                    HomeInstallmentListSection(
+                        contracts = installmentContracts,
+                        onSeeAll = onInstallment,
+                    )
+                } else {
+                    HomeInstallmentPromoCard(
+                        onSimulate = onInstallment,
                     )
                 }
             }
@@ -2047,7 +2062,7 @@ private fun CatalogSkuCard(sku: Sku, onClick: () -> Unit) {
                 )
             }
             if (sku.stock == 0) {
-                StatusChip("Stok habis", ChipTone.WARN, Icons.Outlined.WarningAmber)
+                StatusChip("Stok habis", ChipTone.WARN, GoldinIcons.AlertCircle)
             } else {
                 Box(
                     Modifier.clip(RoundedCornerShape(50)).background(Palette.Primary50).padding(horizontal = 10.dp, vertical = 5.dp),
@@ -2173,7 +2188,7 @@ fun BuyScreen(env: AppEnv, skuCode: String, onBack: () -> Unit, onDone: (List<Go
                     modifier = Modifier.weight(1f),
                 )
                 IconButton(onClick = { if (quantity > 1) quantity-- }, enabled = quantity > 1, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Remove, "Kurangi", modifier = Modifier.size(18.dp))
+                    Icon(GoldinIcons.Minus, "Kurangi", modifier = Modifier.size(18.dp))
                 }
                 Text(
                     "$quantity",
@@ -2183,7 +2198,7 @@ fun BuyScreen(env: AppEnv, skuCode: String, onBack: () -> Unit, onDone: (List<Go
                     modifier = Modifier.padding(horizontal = 10.dp),
                 )
                 IconButton(onClick = { if (quantity < sku.stock) quantity++ }, enabled = quantity < sku.stock, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Add, "Tambah", modifier = Modifier.size(18.dp))
+                    Icon(GoldinIcons.Plus, "Tambah", modifier = Modifier.size(18.dp))
                 }
             }
 
@@ -2367,7 +2382,7 @@ internal fun PaymentWaitDialog(
                                     .border(1.dp, Palette.Primary100, RoundedCornerShape(16.dp)),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Icon(Icons.Filled.QrCode2, "Kode QRIS", tint = Palette.Primary, modifier = Modifier.size(164.dp))
+                                Icon(GoldinIcons.QrCode, "Kode QRIS", tint = Palette.Primary, modifier = Modifier.size(164.dp))
                             }
                         }
                         Spacer(Modifier.height(12.dp))

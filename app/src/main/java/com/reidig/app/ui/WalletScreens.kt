@@ -83,7 +83,7 @@ fun WalletScreen(
                             GoldBarsBadge(40.dp, 22.dp)
                             Spacer(Modifier.width(10.dp))
                             Column {
-                                Text("Dompet Emas", color = Palette.InkSoft, fontFamily = BodyFontFamily, fontSize = 12.sp)
+                                Text("Tabungan Emas", color = Palette.InkSoft, fontFamily = BodyFontFamily, fontSize = 12.sp)
                                 Text(
                                     "${state.ownedTokens.size} keping fisik tersimpan",
                                     color = Palette.InkSecondary,
@@ -184,7 +184,7 @@ fun WalletScreen(
                             }
                             Spacer(Modifier.width(10.dp))
                             Column {
-                                Text("Dompet Rupiah", color = Palette.InkSoft, fontFamily = BodyFontFamily, fontSize = 12.sp)
+                                Text("Saldo Kas", color = Palette.InkSoft, fontFamily = BodyFontFamily, fontSize = 12.sp)
                                 Text("Saldo kas hasil penjualan & transaksi", color = Palette.InkSecondary, fontFamily = BodyFontFamily, fontSize = 11.5.sp)
                             }
                         }
@@ -362,7 +362,7 @@ fun LegacyWithdrawScreen(env: AppEnv, onBack: () -> Unit, onDone: () -> Unit) {
     FormScreen(
         "Tarik Dana",
         onBack,
-        bottom = { PrimaryButton("Tarik ${if (amount > 0) rupiah(amount) else "dana"}", { askPin = true }, enabled = amount > 0 && !tooMuch && account != null) },
+        bottom = { PrimaryButton("Tarik dana", { askPin = true }, enabled = amount > 0 && !tooMuch && account != null) },
     ) {
         Headline("Tarik ke rekening bank", "Dana cair ke rekening terverifikasi atas nama Anda.", titleColor = Palette.Primary)
         Spacer(Modifier.height(16.dp))

@@ -55,6 +55,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -1091,6 +1092,23 @@ fun FormScreen(
             )
         }
     }
+}
+
+/** Komponen ikon resmi Goldin dengan ukuran dan pewarnaan standar Design System v2. */
+@Composable
+fun GoldinIcon(
+    icon: ImageVector,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalContentColor.current,
+    size: Dp = GoldinControl.IconMd,
+) {
+    Icon(
+        imageVector = icon,
+        contentDescription = contentDescription,
+        tint = tint,
+        modifier = modifier.size(size),
+    )
 }
 
 /** Tombol ikon bulat 44x44dp dengan umpan balik hover/tekan (`neutral-200`) sesuai aturan Handoff §3. */
@@ -2670,18 +2688,12 @@ fun GoldinBottomSheet(
     dismissOnScrimClick: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    var entered by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { entered = true }
-    val scrimAlpha by animateFloatAsState(
-        targetValue = if (entered) 1f else 0f,
-        animationSpec = tween(GoldinMotion.DurationHover),
-        label = "sheetScrim",
-    )
-    val sheetFraction by animateFloatAsState(
-        targetValue = if (entered) 0f else 1f,
-        animationSpec = tween(GoldinMotion.DurationSheet, easing = GoldinMotion.EaseOutSheet),
-        label = "sheetSlide",
-    )
+    val sheetFraction = remember { Animatable(0.2f) }
+    val scrimAlpha = remember { Animatable(0.5f) }
+    LaunchedEffect(Unit) {
+        launch { sheetFraction.animateTo(0f, tween(GoldinMotion.DurationSheet, easing = GoldinMotion.EaseOutSheet)) }
+        launch { scrimAlpha.animateTo(1f, tween(GoldinMotion.DurationHover)) }
+    }
 
     Dialog(
         onDismissRequest = { if (dismissOnScrimClick) onDismiss() },
@@ -2690,7 +2702,7 @@ fun GoldinBottomSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Palette.Scrim.copy(alpha = 0.4f * scrimAlpha)),
+                .background(Palette.Scrim.copy(alpha = 0.4f * scrimAlpha.value)),
             contentAlignment = Alignment.BottomCenter,
         ) {
             Box(
@@ -2706,7 +2718,7 @@ fun GoldinBottomSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .graphicsLayer { translationY = size.height * sheetFraction }
+                    .graphicsLayer { translationY = size.height * sheetFraction.value }
                     .shadow(16.dp, RoundedCornerShape(topStart = GoldinRadius.Xxl, topEnd = GoldinRadius.Xxl))
                     .clip(RoundedCornerShape(topStart = GoldinRadius.Xxl, topEnd = GoldinRadius.Xxl))
                     .background(Color.White)
@@ -2881,18 +2893,12 @@ fun GoldinModal(
     onCheckboxChange: ((Boolean) -> Unit)? = null,
     confirmEnabled: Boolean = true,
 ) {
-    var entered by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { entered = true }
-    val scale by animateFloatAsState(
-        targetValue = if (entered) 1f else 0.94f,
-        animationSpec = tween(GoldinMotion.DurationModal, easing = GoldinMotion.EaseOutSheet),
-        label = "modalScale",
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (entered) 1f else 0f,
-        animationSpec = tween(GoldinMotion.DurationHover),
-        label = "modalAlpha",
-    )
+    val scale = remember { Animatable(0.95f) }
+    val alpha = remember { Animatable(0.7f) }
+    LaunchedEffect(Unit) {
+        launch { scale.animateTo(1f, tween(GoldinMotion.DurationModal, easing = GoldinMotion.EaseOutSheet)) }
+        launch { alpha.animateTo(1f, tween(GoldinMotion.DurationHover)) }
+    }
 
     Dialog(
         onDismissRequest = onCancel,
@@ -2901,7 +2907,7 @@ fun GoldinModal(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Palette.Scrim.copy(alpha = 0.4f * alpha))
+                .background(Palette.Scrim.copy(alpha = 0.4f * alpha.value))
                 .padding(horizontal = GoldinSpace.Lg),
             contentAlignment = Alignment.Center,
         ) {
@@ -2909,9 +2915,9 @@ fun GoldinModal(
                 modifier = Modifier
                     .fillMaxWidth()
                     .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        this.alpha = alpha
+                        scaleX = scale.value
+                        scaleY = scale.value
+                        this.alpha = alpha.value
                     }
                     .shadow(16.dp, RoundedCornerShape(GoldinRadius.Xxl))
                     .clip(RoundedCornerShape(GoldinRadius.Xxl))

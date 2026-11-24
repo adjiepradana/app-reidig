@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -156,7 +155,7 @@ fun DownPaymentScreen(
         { confirmCancel = true },
         bottom = {
             PrimaryButton(
-                "Bayar ${rupiah(application.downPayment)}",
+                "Bayar",
                 { if (method == PaymentMethod.WALLET) askPin = true else paymentCode = env.repo.downPaymentCode(method) },
                 enabled = !insufficient,
             )
@@ -232,12 +231,14 @@ fun DownPaymentScreen(
         )
     }
     if (confirmCancel) {
-        AlertDialog(
-            onDismissRequest = { confirmCancel = false },
-            title = { Text("Batalkan pengajuan?", fontFamily = TitleFontFamily, fontWeight = FontWeight.Bold) },
-            text = { Text("Keping yang ditahan akan dilepas kembali.", fontFamily = BodyFontFamily) },
-            confirmButton = { TextLink("Batalkan", ::cancel, color = Palette.Critical) },
-            dismissButton = { TextLink("Lanjut bayar", { confirmCancel = false }) },
+        GoldinModal(
+            title = "Batalkan pengajuan?",
+            message = "Keping yang ditahan akan dilepas kembali.",
+            confirmLabel = "Batalkan",
+            onConfirm = ::cancel,
+            cancelLabel = "Lanjut bayar",
+            onCancel = { confirmCancel = false },
+            isDestructive = true,
         )
     }
 }
