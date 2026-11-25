@@ -5,10 +5,14 @@ import com.reidig.shared.BankAccount
 import com.reidig.shared.Branch
 import com.reidig.shared.EmailCodeResult
 import com.reidig.shared.GoldBranch
+import com.reidig.shared.GoldBrand
 import com.reidig.shared.MockRepository
 import com.reidig.shared.PRICE_LOCK_SECONDS
 import com.reidig.shared.PaymentMethod
+import com.reidig.shared.PhysicalOrderStatus
+import com.reidig.shared.PhysicalPrintOrder
 import com.reidig.shared.PinVerifyResult
+import com.reidig.shared.PrintMethod
 import com.reidig.shared.ReidigException
 import com.reidig.shared.Rules
 import com.reidig.shared.Sku
@@ -43,14 +47,15 @@ class ApiRepository(
     var lastVerifiedPin: String? = null
 
     init {
-        // Muat katalog SKU dan cabang resmi dari server secara asynchronous (public endpoints)
+        // Muat katalog SKU, cabang resmi, dan brand cetak dari server secara asynchronous (public endpoints)
         scope.launch {
             try {
                 fetchCatalogSkus()
                 fetchBranches()
+                fetchPrintBrands()
             } catch (_: Exception) {}
         }
-        // Jika token sudah ada (misal dari saved storage), muat profil, harga emas, saldo kas, order & token dari server
+        // Jika token sudah ada (misal dari saved storage), muat profil, harga emas, saldo kas, order, token & cetak fisik dari server
         if (api.accessToken != null) {
             scope.launch {
                 try {
@@ -60,6 +65,7 @@ class ApiRepository(
                     fetchWalletEntries()
                     fetchOrders()
                     fetchTokens()
+                    fetchPrintOrders()
                 } catch (_: Exception) {}
             }
         }
@@ -83,6 +89,8 @@ class ApiRepository(
                 fetchWalletEntries()
                 fetchOrders()
                 fetchTokens()
+                fetchPrintBrands()
+                fetchPrintOrders()
             } catch (e: ReidigException) {
                 throw e
             } catch (e: Exception) {
@@ -813,6 +821,145 @@ class ApiRepository(
             tokens
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    // --- Modul 6: Cetak Fisik & Reservasi Cabang ---
+
+    private fun mapPrintOutToPhysicalOrder(p: PrintOut): PhysicalPrintOrder {
+        val isPickup = p.method.equals("PICKUP", ignoreCase = true)
+        val status = when (p.status.uppercase()) {
+            "WAITING_PAYMENT", "PENDING" -> PhysicalOrderStatus.WAITING_PAYMENT
+            "PREPARING", "PROCESSING", "PICKED" -> PhysicalOrderStatus.PREPARING
+            "SHIPPED", "IN_TRANSIT" -> if (isPickup) PhysicalOrderStatus.SHIPPED_TO_BRANCH else PhysicalOrderStatus.IN_TRANSIT
+            "READY_PICKUP", "ARRIVED" -> PhysicalOrderStatus.READY_PICKUP
+            "COMPLETED", "DONE", "PICKED_UP" -> PhysicalOrderStatus.DONE
+            "DELIVERED" -> PhysicalOrderStatus.DELIVERED
+            else -> PhysicalOrderStatus.CREATED
+        }
+        val brand = when {
+            p.printBrandCode?.contains("antam", ignoreCase = true) == true -> GoldBrand.ANTAM
+            p.printBrandCode?.contains("galeri", ignoreCase = true) == true || p.printBrandCode?.contains("g24", ignoreCase = true) == true -> GoldBrand.GALERI_24
+            else -> GoldBrand.LM_REI
+        }
+        val totalMg = p.items.sumOf { it.weightMg }
+        val grams = if (totalMg > 0) totalMg / 1000.0 else 1.0
+        val printFeeLong = p.printFee.toLongOrNull() ?: 50_000L
+        val serial = p.items.firstOrNull()?.serialNumber ?: "${brand.serialPrefix}-${p.id}"
+        val code = p.pickupCode ?: "TKT-${p.id}"
+        return PhysicalPrintOrder(
+            id = "CTK-${p.id}",
+            orderNumber = "CTK-${p.id}",
+            brand = brand,
+            weightGrams = grams,
+            quantity = p.items.size.coerceAtLeast(1),
+            method = if (isPickup) PrintMethod.BRANCH else PrintMethod.DELIVERY,
+            branchId = if (isPickup) p.destination else null,
+            branchName = if (isPickup) p.destination else null,
+            branchAddress = if (isPickup) p.destination else null,
+            destinationAddress = if (!isPickup) p.destination else null,
+            status = status,
+            ticketCode = code,
+            qrCodePayload = code,
+            printFee = printFeeLong,
+            shippingInsuranceFee = if (isPickup) 0L else 35_000L,
+            totalPayment = printFeeLong + (if (isPickup) 0L else 35_000L),
+            serialNumber = serial,
+            trackingNumber = p.trackingNumber,
+            createdAtMs = clock(),
+        )
+    }
+
+    override fun createPhysicalPrintOrder(
+        brand: GoldBrand,
+        weightGrams: Double,
+        method: PrintMethod,
+        branchId: String?,
+        deliveryAddress: String?,
+        recipientName: String?,
+        recipientPhone: String?,
+        paymentMethod: PaymentMethod,
+        pin: String,
+    ): PhysicalPrintOrder {
+        if (api.accessToken != null) {
+            val effectivePin = pin.ifBlank { lastVerifiedPin ?: MockRepository.GOLDIN_DEMO_PIN }
+            return runBlocking {
+                try {
+                    val tokens = runCatching { api.getTokens() }.getOrDefault(emptyList())
+                    val activeTokens = tokens.filter { it.status.equals("ACTIVE", ignoreCase = true) }
+                    val tokenCodes = activeTokens.take((weightGrams).toInt().coerceAtLeast(1)).map { it.code }
+                    val isBranch = method == PrintMethod.BRANCH
+                    val printBrandCode = when (brand) {
+                        GoldBrand.ANTAM -> "antam"
+                        GoldBrand.GALERI_24 -> "g24"
+                        GoldBrand.LM_REI -> "lmrei"
+                    }
+                    val printIn = PrintIn(
+                        tokenCodes = if (tokenCodes.isNotEmpty()) tokenCodes else listOf("TKN-PRINT-${clock()}"),
+                        method = if (isBranch) "PICKUP" else "SHIP",
+                        address = if (!isBranch) deliveryAddress else null,
+                        branchCode = if (isBranch) (branchId ?: "kwc") else null,
+                        printBrandCode = printBrandCode,
+                        pin = effectivePin,
+                    )
+                    val printOut = api.createPrintOrder(printIn)
+                    fetchWallet()
+                    fetchWalletEntries()
+                    fetchTokens()
+                    fetchPrintOrders()
+                    mapPrintOutToPhysicalOrder(printOut)
+                } catch (e: ReidigException) {
+                    throw e
+                } catch (e: Exception) {
+                    super.createPhysicalPrintOrder(
+                        brand, weightGrams, method, branchId, deliveryAddress, recipientName, recipientPhone, paymentMethod, pin
+                    )
+                }
+            }
+        }
+        return super.createPhysicalPrintOrder(
+            brand, weightGrams, method, branchId, deliveryAddress, recipientName, recipientPhone, paymentMethod, pin
+        )
+    }
+
+    override suspend fun fetchPrintOrders(): List<PrintOut> {
+        val token = api.accessToken ?: return emptyList()
+        return try {
+            val list = api.getPrintOrders()
+            if (list.isNotEmpty()) {
+                val mapped = list.map { mapPrintOutToPhysicalOrder(it) }
+                _state.update { curr ->
+                    val existingIds = curr.physicalOrders.map { it.id }.toSet()
+                    val newOrders = mapped.filter { it.id !in existingIds }
+                    curr.copy(physicalOrders = newOrders + curr.physicalOrders)
+                }
+            }
+            list
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun fetchPrintBrands(): List<PrintBrandOut> {
+        val token = api.accessToken ?: return emptyList()
+        return try {
+            api.getPrintBrands()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun cancelPhysicalPrintOrder(orderId: String): Boolean {
+        val token = api.accessToken ?: return false
+        val intId = orderId.removePrefix("CTK-").toIntOrNull() ?: return false
+        return try {
+            api.cancelPrintOrder(intId)
+            fetchWallet()
+            fetchTokens()
+            fetchPrintOrders()
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 

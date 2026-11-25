@@ -1566,4 +1566,108 @@ class MockRepositoryTest {
         assertEquals(currentGold - 1.0, repoLocal.state.value.goldBalanceGrams)
         assertEquals(currentWallet + sellQuote.total, repoLocal.state.value.walletBalance)
     }
+
+    @Test
+    fun modul6PrintOrdersAndBrandsDtosAndFlow() {
+        val json = kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+            coerceInputValues = true
+        }
+
+        // 1. Uji Deserialisasi PrintBrandOut
+        val rawBrandsJson = """
+            [
+                {
+                    "code": "lmrei",
+                    "name": "LM Raja Emas",
+                    "is_active": true,
+                    "price_per_gram": "1450000"
+                },
+                {
+                    "code": "antam",
+                    "name": "Antam CertiCard",
+                    "is_active": true,
+                    "price_per_gram": "1520000"
+                }
+            ]
+        """.trimIndent()
+        val brands = json.decodeFromString<List<com.reidig.shared.api.PrintBrandOut>>(rawBrandsJson)
+        assertEquals(2, brands.size)
+        assertEquals("lmrei", brands[0].code)
+        assertTrue(brands[0].isActive)
+        assertEquals("1450000", brands[0].pricePerGram)
+
+        // 2. Uji Serialisasi PrintIn
+        val printIn = com.reidig.shared.api.PrintIn(
+            tokenCodes = listOf("TKN-001", "TKN-002"),
+            method = "PICKUP",
+            branchCode = "kwc",
+            printBrandCode = "lmrei",
+            pin = "135790",
+        )
+        val printInJson = json.encodeToString(com.reidig.shared.api.PrintIn.serializer(), printIn)
+        assertTrue(printInJson.contains("\"method\":\"PICKUP\""))
+        assertTrue(printInJson.contains("\"branch_code\":\"kwc\""))
+        assertTrue(printInJson.contains("\"pin\":\"135790\""))
+
+        // 3. Uji Deserialisasi PrintOut & PrintItemOut
+        val rawPrintOutJson = """
+            {
+                "id": 402,
+                "method": "PICKUP",
+                "destination": "Cabang Karawaci",
+                "status": "READY_PICKUP",
+                "tracking_number": null,
+                "pickup_code": "TKT-REI-402",
+                "pickup_deadline": "2026-11-30T17:00:00Z",
+                "estimate": "1–2 hari kerja",
+                "created_at": "2026-11-25T14:15:00Z",
+                "print_brand_code": "lmrei",
+                "print_brand_name": "LM Raja Emas",
+                "print_fee": "50000",
+                "items": [
+                    {
+                        "token_code": "TKN-001",
+                        "serial_number": "LMR-2026-001",
+                        "weight_mg": 1000,
+                        "picked": true,
+                        "arrived": true
+                    }
+                ]
+            }
+        """.trimIndent()
+        val printOut = json.decodeFromString<com.reidig.shared.api.PrintOut>(rawPrintOutJson)
+        assertEquals(402, printOut.id)
+        assertEquals("PICKUP", printOut.method)
+        assertEquals("READY_PICKUP", printOut.status)
+        assertEquals("TKT-REI-402", printOut.pickupCode)
+        assertEquals(1, printOut.items.size)
+        assertEquals(1000L, printOut.items[0].weightMg)
+        assertTrue(printOut.items[0].arrived)
+
+        // 4. Uji Alur Order Cetak Fisik di MockRepository
+        val repoLocal = MockRepository(clock = { now })
+        repoLocal.login("uji@contoh.id", "Rahasia123")
+        val initialWallet = repoLocal.state.value.walletBalance
+        val initialGold = repoLocal.state.value.goldBalanceGrams
+
+        val printOrder = repoLocal.createPhysicalPrintOrder(
+            brand = GoldBrand.LM_REI,
+            weightGrams = 1.0,
+            method = PrintMethod.BRANCH,
+            branchId = "kwc",
+            paymentMethod = PaymentMethod.WALLET,
+            pin = MockRepository.GOLDIN_DEMO_PIN,
+        )
+        assertNotNull(printOrder)
+        assertEquals(1.0, printOrder.weightGrams)
+        assertEquals(PrintMethod.BRANCH, printOrder.method)
+        assertTrue(printOrder.ticketCode.isNotEmpty())
+        assertEquals(50_000L, printOrder.printFee)
+        assertEquals(50_000L, printOrder.totalPayment)
+        assertEquals(initialGold - 1.0, repoLocal.state.value.goldBalanceGrams)
+        assertEquals(initialWallet - 50_000L, repoLocal.state.value.walletBalance)
+        assertTrue(repoLocal.getPhysicalPrintOrders().any { it.id == printOrder.id })
+    }
 }

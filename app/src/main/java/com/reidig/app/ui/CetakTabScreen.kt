@@ -82,6 +82,9 @@ fun CetakTabScreen(
         try {
             env.repo.fetchCatalogSkus()
             env.repo.fetchBranches()
+            env.repo.fetchPrintBrands()
+            env.repo.fetchPrintOrders()
+            env.repo.fetchTokens()
             branches = env.repo.getGoldBranches()
             stockList = env.repo.getGoldBarStock()
         } catch (_: Exception) {}

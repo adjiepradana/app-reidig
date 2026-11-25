@@ -240,6 +240,52 @@ data class TokenOut(
     @SerialName("sellable_at") val sellableAt: String? = null,
 )
 
+// --- Modul 6: Cetak Fisik & Reservasi Cabang ---
+
+@Serializable
+data class PrintBrandOut(
+    val code: String,
+    val name: String,
+    @SerialName("is_active") val isActive: Boolean,
+    @SerialName("price_per_gram") val pricePerGram: String,
+)
+
+@Serializable
+data class PrintIn(
+    @SerialName("token_codes") val tokenCodes: List<String>,
+    val method: String, // "SHIP" or "PICKUP"
+    val address: String? = null,
+    @SerialName("branch_code") val branchCode: String? = null,
+    @SerialName("print_brand_code") val printBrandCode: String? = null,
+    val pin: String,
+)
+
+@Serializable
+data class PrintItemOut(
+    @SerialName("token_code") val tokenCode: String,
+    @SerialName("serial_number") val serialNumber: String,
+    @SerialName("weight_mg") val weightMg: Long,
+    val picked: Boolean = false,
+    val arrived: Boolean = false,
+)
+
+@Serializable
+data class PrintOut(
+    val id: Int,
+    val method: String,
+    val destination: String,
+    val status: String,
+    @SerialName("tracking_number") val trackingNumber: String? = null,
+    @SerialName("pickup_code") val pickupCode: String? = null,
+    @SerialName("pickup_deadline") val pickupDeadline: String? = null,
+    val estimate: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("print_brand_code") val printBrandCode: String? = null,
+    @SerialName("print_brand_name") val printBrandName: String? = null,
+    @SerialName("print_fee") val printFee: String = "0",
+    val items: List<PrintItemOut> = emptyList(),
+)
+
 @Serializable
 data class ApiErrorDetail(
     val code: String? = null,

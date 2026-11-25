@@ -419,6 +419,80 @@ class ReidigApiClient(
         return response.body()
     }
 
+    // --- Modul 6: Cetak Fisik & Reservasi Cabang Endpoints ---
+
+    /**
+     * Mengambil daftar brand percetakan emas fisik yang tersedia (`GET /v1/print-orders/brands`).
+     */
+    suspend fun getPrintBrands(): List<PrintBrandOut> {
+        val token = accessToken
+        val response = client.get("/v1/print-orders/brands") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengajukan pesanan cetak fisik emas (kirim ke alamat atau ambil di cabang) (`POST /v1/print-orders`).
+     */
+    suspend fun createPrintOrder(order: PrintIn): PrintOut {
+        val token = accessToken
+        val response = client.post("/v1/print-orders") {
+            contentType(ContentType.Application.Json)
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            setBody(order)
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengambil daftar seluruh riwayat pesanan cetak fisik emas nasabah (`GET /v1/print-orders`).
+     */
+    suspend fun getPrintOrders(): List<PrintOut> {
+        val token = accessToken
+        val response = client.get("/v1/print-orders") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengambil detail satu pesanan cetak fisik emas (`GET /v1/print-orders/{order_id}`).
+     */
+    suspend fun getPrintOrder(orderId: Int): PrintOut {
+        val token = accessToken
+        val response = client.get("/v1/print-orders/$orderId") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Membatalkan pesanan cetak fisik emas yang belum diproses (`POST /v1/print-orders/{order_id}/cancel`).
+     */
+    suspend fun cancelPrintOrder(orderId: Int): PrintOut {
+        val token = accessToken
+        val response = client.post("/v1/print-orders/$orderId/cancel") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
     /** Keluar dari sesi login. */
     suspend fun logout() {
         val token = accessToken

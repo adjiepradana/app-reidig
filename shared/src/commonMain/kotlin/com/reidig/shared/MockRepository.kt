@@ -2061,6 +2061,12 @@ open class MockRepository(
 
     open suspend fun fetchTokens(includeClosed: Boolean = false): List<com.reidig.shared.api.TokenOut> = emptyList()
 
+    open suspend fun fetchPrintOrders(): List<com.reidig.shared.api.PrintOut> = emptyList()
+
+    open suspend fun fetchPrintBrands(): List<com.reidig.shared.api.PrintBrandOut> = emptyList()
+
+    open suspend fun cancelPhysicalPrintOrder(orderId: String): Boolean = false
+
     fun getGoldBarStock(): List<GoldBarStock> {
         val sizes = listOf(1.0, 2.0, 3.0, 5.0, 10.0, 25.0, 50.0, 100.0)
         return GoldBrand.entries.flatMap { brand ->
@@ -2083,11 +2089,11 @@ open class MockRepository(
         return true
     }
 
-    fun getPhysicalPrintOrders(): List<PhysicalPrintOrder> = _state.value.physicalOrders
+    open fun getPhysicalPrintOrders(): List<PhysicalPrintOrder> = _state.value.physicalOrders
 
-    fun getPhysicalPrintOrder(id: String): PhysicalPrintOrder? = _state.value.physicalOrders.firstOrNull { it.id == id }
+    open fun getPhysicalPrintOrder(id: String): PhysicalPrintOrder? = _state.value.physicalOrders.firstOrNull { it.id == id }
 
-    fun createPhysicalPrintOrder(brand: GoldBrand, weightGrams: Double, method: PrintMethod, branchId: String? = null, deliveryAddress: String? = null, recipientName: String? = null, recipientPhone: String? = null, paymentMethod: PaymentMethod = PaymentMethod.WALLET, pin: String): PhysicalPrintOrder {
+    open fun createPhysicalPrintOrder(brand: GoldBrand, weightGrams: Double, method: PrintMethod, branchId: String? = null, deliveryAddress: String? = null, recipientName: String? = null, recipientPhone: String? = null, paymentMethod: PaymentMethod = PaymentMethod.WALLET, pin: String): PhysicalPrintOrder {
         val s = _state.value
         if (weightGrams <= 0.0) fail("INVALID", "Berat keping emas tidak valid.")
         if (!isStockAvailable(brand, weightGrams)) fail("OUT_OF_STOCK", "Stok keping ini sedang habis.")
