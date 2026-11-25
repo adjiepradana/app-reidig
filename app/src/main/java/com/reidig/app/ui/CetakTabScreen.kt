@@ -27,6 +27,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,10 +73,19 @@ fun CetakTabScreen(
     val isKycPending = user?.isKycPending == true
 
     val freeGoldGrams = state.freeGoldGrams
-    val branches = remember { env.repo.getGoldBranches() }
+    var branches by remember { mutableStateOf(env.repo.getGoldBranches()) }
+    var stockList by remember { mutableStateOf(env.repo.getGoldBarStock()) }
     val nearbyBranches = remember(branches) { branches.sortedBy { it.distanceKm }.take(3) }
-    val stockList = remember { env.repo.getGoldBarStock() }
     val printOrders = state.physicalOrders
+
+    LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchCatalogSkus()
+            env.repo.fetchBranches()
+            branches = env.repo.getGoldBranches()
+            stockList = env.repo.getGoldBarStock()
+        } catch (_: Exception) {}
+    }
 
     var showAllOrdersSheet by remember { mutableStateOf(false) }
     val lazyListState = rememberLazyListState()
@@ -409,7 +419,7 @@ private fun CetakFreeGoldCard(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = formatGrams4(freeGoldGrams).replace(",", " , "),
+                text = formatGrams4(freeGoldGrams).replace(" gr", "").replace(",", " , "),
                 fontFamily = MonoFontFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 24.sp,
@@ -623,7 +633,7 @@ private fun CetakOrderItemRow(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = "${order.brand.displayName} ${formatGrams4(order.weightGrams)} gr",
+                text = "${order.brand.displayName} ${formatGrams4(order.weightGrams)}",
                 fontFamily = BodyFontFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,

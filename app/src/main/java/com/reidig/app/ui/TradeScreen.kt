@@ -105,8 +105,11 @@ fun TradeScreen(
     var wText by remember { mutableStateOf("") }
     var isTypingRp by remember { mutableStateOf(!wTop) }
 
-    // Konsumsi prefill dari Beranda jika ada
+    // Konsumsi prefill dari Beranda jika ada & sinkronkan harga emas terbaru
     LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchGoldPrice()
+        } catch (_: Exception) {}
         tradePrefill?.consume()?.let { (pMode, pUnit, pValue) ->
             isBuy = (pMode != "jual")
             if (pUnit == "rp") {

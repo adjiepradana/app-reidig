@@ -12,6 +12,7 @@ import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.logging.SIMPLE
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -164,6 +165,133 @@ class ReidigApiClient(
             header(HttpHeaders.Authorization, "Bearer $token")
             contentType(ContentType.Application.Json)
             setBody(BankAccountIn(bankCode = bankCode, accountNumber = accountNumber, holderName = holderName))
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    // --- Modul Harga & Grafik Emas Endpoints ---
+
+    /** Mengambil harga emas 1 gram terkini dari live backend. */
+    suspend fun getOneGramPrice(): PriceOut {
+        val token = accessToken
+        val response = client.get("/v1/prices/1g") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /** Mengambil riwayat harga emas 1 gram dari live backend. */
+    suspend fun getOneGramPriceHistory(limit: Int = 500): List<PriceOut> {
+        val token = accessToken
+        val response = client.get("/v1/prices/1g/history") {
+            parameter("limit", limit)
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengambil katalog SKU emas fisik lengkap beserta harga dan stok aktif (`GET /v1/catalog/skus`).
+     */
+    suspend fun getCatalogSkus(): CatalogOut {
+        val token = accessToken
+        val response = client.get("/v1/catalog/skus") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengambil daftar cabang resmi Raja Emas (`GET /v1/branches`).
+     */
+    suspend fun getBranches(): List<BranchOut> {
+        val token = accessToken
+        val response = client.get("/v1/branches") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /** Mengambil saldo kas dompet aktif pengguna (`GET /v1/wallet`). */
+    suspend fun getWallet(): WalletOut {
+        val token = accessToken
+        val response = client.get("/v1/wallet") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /** Mengambil daftar mutasi / entri buku kas dompet (`GET /v1/wallet/entries`). */
+    suspend fun getWalletEntries(): List<EntryOut> {
+        val token = accessToken
+        val response = client.get("/v1/wallet/entries") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /** Menambahkan saldo kas dompet (`POST /v1/wallet/topups`). */
+    suspend fun topupWallet(amount: Long): WalletOut {
+        val token = accessToken
+        val response = client.post("/v1/wallet/topups") {
+            contentType(ContentType.Application.Json)
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            setBody(TopupIn(amount = amount.toString()))
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /** Mengajukan penarikan dana ke rekening bank (`POST /v1/wallet/withdrawals`). */
+    suspend fun withdraw(
+        amount: Long,
+        bankAccountId: Int,
+        pin: String,
+        idempotencyKey: String? = null,
+    ): WithdrawalOut {
+        val token = accessToken
+        val response = client.post("/v1/wallet/withdrawals") {
+            contentType(ContentType.Application.Json)
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            if (idempotencyKey != null) {
+                header("Idempotency-Key", idempotencyKey)
+            }
+            setBody(WithdrawIn(amount = amount.toString(), bankAccountId = bankAccountId, pin = pin))
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /** Mengambil daftar riwayat penarikan dana (`GET /v1/wallet/withdrawals`). */
+    suspend fun getWithdrawals(): List<WithdrawalOut> {
+        val token = accessToken
+        val response = client.get("/v1/wallet/withdrawals") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
         }
         checkResponse(response)
         return response.body()

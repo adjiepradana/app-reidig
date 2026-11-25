@@ -127,6 +127,11 @@ fun CetakBrandSizeScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by env.repo.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchCatalogSkus()
+        } catch (_: Exception) {}
+    }
     val freeGoldGrams = state.freeGoldGrams
 
     var selectedBrand by rememberSaveable { mutableStateOf(initialBrand) }
@@ -575,7 +580,13 @@ fun CetakMethodScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by env.repo.state.collectAsStateWithLifecycle()
-    val allBranches = remember { env.repo.getGoldBranches() }
+    var allBranches by remember { mutableStateOf(env.repo.getGoldBranches()) }
+    LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchBranches()
+            allBranches = env.repo.getGoldBranches()
+        } catch (_: Exception) {}
+    }
     val savedAddresses = state.savedAddresses
 
     var selectedMethod by rememberSaveable { mutableStateOf(initialMethod) }

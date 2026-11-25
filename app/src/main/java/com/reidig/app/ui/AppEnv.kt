@@ -307,24 +307,35 @@ fun PinDialog(env: AppEnv, title: String, onDismiss: () -> Unit, onVerified: () 
                 Spacer(Modifier.height(16.dp))
                 NumberPad(
                     onDigit = { digit ->
-                        if (code.length < 6) {
+                        if (error != null) {
                             error = null
+                            code = ""
+                        }
+                        if (code.length < 6) {
                             code += digit
+                            println("PinDialog digit='$digit', currentCode='$code'")
                             if (code.length == 6) {
+                                println("PinDialog verifying complete code='$code'")
                                 try {
                                     if (env.repo.verifyPin(code)) {
+                                        println("PinDialog verification success!")
                                         onVerified()
                                     } else {
+                                        println("PinDialog verification returned false")
                                         error = "PIN salah. Coba lagi."
                                     }
                                 } catch (e: ReidigException) {
+                                    println("PinDialog ReidigException: ${e.message}")
                                     error = e.message
                                 }
                                 code = ""
                             }
                         }
                     },
-                    onDelete = { code = code.dropLast(1) },
+                    onDelete = {
+                        error = null
+                        code = code.dropLast(1)
+                    },
                 )
             }
         }

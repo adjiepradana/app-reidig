@@ -203,6 +203,17 @@ fun HomeScreen(
     var hpAmtRaw by rememberSaveable { mutableStateOf("") }
     var hpTargetRaw by rememberSaveable { mutableStateOf("") }
 
+    // Muat harga emas terkini dari server saat Beranda dimuat
+    LaunchedEffect(Unit) {
+        if (!isPreview) {
+            scope.launch {
+                try {
+                    env.repo.fetchGoldPrice()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     // Tampilkan titik merah pada tombol refresh setelah ~10 detik sejak pembaruan terakhir (`Main.dc.html` L3527)
     LaunchedEffect(lastRefreshAtMs, isRefreshingPrice, isPreview) {
         if (isPreview || isRefreshingPrice) return@LaunchedEffect
@@ -1904,6 +1915,11 @@ private fun HomeEmptyRoutinePlanPreview() = GoldinTheme {
 @Composable
 fun PriceTableScreen(env: AppEnv, onBack: () -> Unit) {
     val state by env.repo.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchCatalogSkus()
+        } catch (_: Exception) {}
+    }
     Column(Modifier.fillMaxSize().background(Palette.Paper).statusBarsPadding()) {
         TopTitleBar("Tabel Harga Emas", onBack)
         LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 28.dp)) {
@@ -1970,6 +1986,11 @@ private fun PriceTableRow(weight: String, buy: String, sell: String, header: Boo
 @Composable
 fun CatalogScreen(env: AppEnv, header: @Composable () -> Unit = {}, onSelect: (String) -> Unit) {
     val state by env.repo.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchCatalogSkus()
+        } catch (_: Exception) {}
+    }
     val sku1g = state.sku("LMRE-1G")
     Column(Modifier.fillMaxSize().background(Palette.Paper).statusBarsPadding()) {
         TopTitleBar("Transaksi", null)

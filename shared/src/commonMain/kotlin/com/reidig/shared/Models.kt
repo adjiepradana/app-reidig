@@ -62,6 +62,7 @@ data class Sku(
     val buyPrice: Long,
     val buybackPrice: Long,
     val stock: Int,
+    val brand: String = "Raja Emas",
 ) {
     val spreadPercent: Double get() = (buyPrice - buybackPrice) * 100.0 / buyPrice
 }
@@ -683,6 +684,7 @@ data class AppState(
     val priceUpdatedAtLabel: String = "12.30 WIB",
     val priceFlash: String? = null,
     val walletBalance: Long = 0,
+    val walletHeldBalance: Long = 0,
     val goldBalanceGrams: Double = 0.0,
     val lockedGoldGrams: Double = 0.0,
     val avgBuyPricePerGram: Long = 2_250_000L,

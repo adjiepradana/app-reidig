@@ -1,5 +1,6 @@
 package com.reidig.shared
 
+import com.reidig.shared.api.PriceOut
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +27,7 @@ open class MockRepository(
     private var serialCounter = 500_000
     private var idCounter = 1
 
-    val branches = listOf(
+    open var branches: List<Branch> = listOf(
         Branch("klg", "Kelapa Gading", "Jakarta Utara", "2–3 hari kerja", "Jakarta Utara", "DKI Jakarta", "Jl. Boulevard Barat Raya Blok LA No. 9", 21.0, "Senin–Sabtu, 10.00–20.00 WIB"),
         Branch("cgk", "Cengkareng", "Jakarta Barat", "2–3 hari kerja", "Jakarta Barat", "DKI Jakarta", "Jl. Daan Mogot KM 14", 15.0, "Senin–Sabtu, 09.00–20.00 WIB"),
         Branch("ptj", "Petojo", "Jakarta Pusat", "1–2 hari kerja", "Jakarta Pusat", "DKI Jakarta", "Jl. Suryopranoto No. 22", 10.0, "Senin–Sabtu, 09.00–20.00 WIB"),
@@ -40,7 +41,7 @@ open class MockRepository(
         Branch("bgr", "Bogor", "Bogor", "2–3 hari kerja", "Kota Bogor", "Jawa Barat", "Jl. Pajajaran No. 32, Bogor Tengah", 35.2, "Senin–Sabtu, 09.00–20.00 WIB"),
     )
 
-    val officialGoldBranches = listOf(
+    open var officialGoldBranches: List<GoldBranch> = listOf(
         GoldBranch("kwc", "Raja Emas Karawaci", "Jl. Imam Bonjol No. 39, Karawaci", "Kota Tangerang", "Banten", 1.2, "Senin–Sabtu, 09.00–17.00 WIB", false),
         GoldBranch("cpd", "Raja Emas Cipondoh", "Jl. KH Hasyim Ashari No. 21, Cipondoh", "Kota Tangerang", "Banten", 3.8, "Senin–Sabtu, 09.00–17.00 WIB", false),
         GoldBranch("bsd", "Raja Emas BSD", "Jl. Pahlawan Seribu Kav. 3, Serpong", "Kota Tangerang Selatan", "Banten", 9.5, "Setiap hari, 10.00–20.00 WIB", true),
@@ -1283,7 +1284,7 @@ open class MockRepository(
         return updatedTx
     }
 
-    fun topup(amount: Long, method: PaymentMethod): Tx {
+    open fun topup(amount: Long, method: PaymentMethod): Tx {
         if (amount < MIN_TOPUP_RP) fail("INVALID", "Minimal top up ${rupiah(MIN_TOPUP_RP)}.")
         val now = clock()
         val fee = TOPUP_FEE
@@ -1385,7 +1386,7 @@ open class MockRepository(
     }
 
     /** Menarik dana kas ke rekening bank tujuan dengan biaya Rp2.500 di atas nominal (Handoff §9 L102 & §14 L135) */
-    fun requestWithdrawal(amount: Long, bankAccountId: String): Tx {
+    open fun requestWithdrawal(amount: Long, bankAccountId: String, pin: String = ""): Tx {
         val state = _state.value
         val account = state.bankAccounts.firstOrNull {
             it.id == bankAccountId || it.id.startsWith(bankAccountId) || it.bank.equals(bankAccountId, ignoreCase = true)
@@ -1458,7 +1459,7 @@ open class MockRepository(
         return updatedTx
     }
 
-    fun withdraw(amount: Long, bankAccountId: String) {
+    open fun withdraw(amount: Long, bankAccountId: String) {
         val state = _state.value
         val account = state.bankAccounts.firstOrNull {
             it.id == bankAccountId || it.id.startsWith(bankAccountId) || it.bank.equals(bankAccountId, ignoreCase = true)
@@ -1624,7 +1625,7 @@ open class MockRepository(
      * Menyimulasikan pembaruan harga emas manual (`Main.dc.html` L4034–4042).
      * Mengembalikan arah flash (`"up"`, `"down"`, atau `null`).
      */
-    fun refreshGoldPrice(formattedHm: String? = null, deltaOverride: Long? = null): String? {
+    open fun refreshGoldPrice(formattedHm: String? = null, deltaOverride: Long? = null): String? {
         val current = _state.value.askPricePerGram
         val rawDelta = deltaOverride ?: run {
             val steps = listOf(-1_500L, -1_000L, -500L, 500L, 1_000L, 1_500L, 2_000L)
@@ -1650,6 +1651,10 @@ open class MockRepository(
         }
         return flash
     }
+
+    open suspend fun fetchGoldPrice(): PriceOut? = null
+
+    open suspend fun fetchGoldPriceHistory(limit: Int = 500): List<PriceOut> = emptyList()
 
     fun clearPriceFlash() {
         _state.update { it.copy(priceFlash = null) }
@@ -2038,9 +2043,19 @@ open class MockRepository(
     // CETAK EMAS FISIK & RESERVASI CABANG RAJA EMAS (TAHAP 9)
     // =========================================================================================
 
-    fun getGoldBranches(): List<GoldBranch> = officialGoldBranches
+    open fun getGoldBranches(): List<GoldBranch> = officialGoldBranches
 
-    fun getGoldBranch(id: String): GoldBranch? = officialGoldBranches.firstOrNull { it.id == id }
+    open fun getGoldBranch(id: String): GoldBranch? = officialGoldBranches.firstOrNull { it.id == id }
+
+    open suspend fun fetchCatalogSkus(): com.reidig.shared.api.CatalogOut? = null
+
+    open suspend fun fetchBranches(): List<com.reidig.shared.api.BranchOut> = emptyList()
+
+    open suspend fun fetchWallet(): com.reidig.shared.api.WalletOut? = null
+
+    open suspend fun fetchWalletEntries(): List<com.reidig.shared.api.EntryOut> = emptyList()
+
+    open suspend fun fetchWithdrawals(): List<com.reidig.shared.api.WithdrawalOut> = emptyList()
 
     fun getGoldBarStock(): List<GoldBarStock> {
         val sizes = listOf(1.0, 2.0, 3.0, 5.0, 10.0, 25.0, 50.0, 100.0)
@@ -2052,7 +2067,12 @@ open class MockRepository(
         }
     }
 
-    fun isStockAvailable(brand: GoldBrand, weightGrams: Double): Boolean {
+    open fun isStockAvailable(brand: GoldBrand, weightGrams: Double): Boolean {
+        if (brand == GoldBrand.LM_REI) {
+            val mg = (weightGrams * 1000).toLong()
+            val match = _state.value.skus.firstOrNull { it.weightMg == mg }
+            if (match != null) return match.stock > 0
+        }
         val weight = weightGrams.toInt()
         if (brand == GoldBrand.ANTAM && weight == 50) return false
         if (brand == GoldBrand.GALERI_24 && (weight == 3 || weight == 100)) return false

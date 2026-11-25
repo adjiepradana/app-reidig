@@ -25,6 +25,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +59,12 @@ fun WalletScreen(
     onWithdraw: () -> Unit,
 ) {
     val state by env.repo.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchWallet()
+            env.repo.fetchWalletEntries()
+        } catch (_: Exception) {}
+    }
     val sku1g = state.sku("LMRE-1G")
     var hideGold by rememberSaveable { mutableStateOf(false) }
     var hideCash by rememberSaveable { mutableStateOf(false) }

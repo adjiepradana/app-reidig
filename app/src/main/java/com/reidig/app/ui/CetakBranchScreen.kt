@@ -33,6 +33,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,13 +72,28 @@ fun CetakBranchScreen(
     selectedBranchId: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    val allBranches = remember { env.repo.getGoldBranches() }
+    var allBranches by remember { mutableStateOf(env.repo.getGoldBranches()) }
     val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchBranches()
+            allBranches = env.repo.getGoldBranches()
+        } catch (_: Exception) {}
+    }
 
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedProvince by rememberSaveable { mutableStateOf("Semua") }
 
-    val provinces = listOf("Semua", "Banten", "DKI Jakarta", "Jawa Barat")
+    val provinces = remember(allBranches) {
+        val list = mutableListOf("Semua")
+        val dynamicProvinces = allBranches.map { it.province.trim() }.filter { it.isNotEmpty() }.distinct()
+        list.addAll(dynamicProvinces)
+        if (!list.contains("Banten")) list.add("Banten")
+        if (!list.contains("DKI Jakarta")) list.add("DKI Jakarta")
+        if (!list.contains("Jawa Barat")) list.add("Jawa Barat")
+        list.distinct()
+    }
 
     val filteredBranches = remember(searchQuery, selectedProvince, allBranches) {
         val q = searchQuery.trim().lowercase()

@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,11 @@ fun WithdrawScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by env.repo.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        try {
+            env.repo.fetchWallet()
+        } catch (_: Exception) {}
+    }
     val bankAccounts = state.bankAccounts
     val kasBal = state.walletBalance
 
