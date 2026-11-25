@@ -105,10 +105,12 @@ fun TradeScreen(
     var wText by remember { mutableStateOf("") }
     var isTypingRp by remember { mutableStateOf(!wTop) }
 
-    // Konsumsi prefill dari Beranda jika ada & sinkronkan harga emas terbaru
+    // Konsumsi prefill dari Beranda jika ada & sinkronkan data pasar dan portofolio terbaru
     LaunchedEffect(Unit) {
         try {
             env.repo.fetchGoldPrice()
+            env.repo.fetchWallet()
+            env.repo.fetchTokens()
         } catch (_: Exception) {}
         tradePrefill?.consume()?.let { (pMode, pUnit, pValue) ->
             isBuy = (pMode != "jual")
@@ -632,12 +634,16 @@ fun TradeScreen(
                                 else onStartKyc()
                                 return@PrimaryButton
                             }
-                            val quote = env.repo.createTradeQuote(
-                                isBuy = isBuy,
-                                inputGrams = calc.grams,
-                                inputSubtotal = calc.subtotal,
-                            )
-                            onCheckout(isBuy, quote.id)
+                            try {
+                                val quote = env.repo.createTradeQuote(
+                                    isBuy = isBuy,
+                                    inputGrams = calc.grams,
+                                    inputSubtotal = calc.subtotal,
+                                )
+                                onCheckout(isBuy, quote.id)
+                            } catch (e: Exception) {
+                                env.notify(e.message ?: "Gagal membuat kuotasi transaksi.")
+                            }
                         },
                         enabled = isCtaEnabled,
                         height = 44.dp,

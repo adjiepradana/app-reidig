@@ -21,7 +21,7 @@ open class MockRepository(
     private val quotes = mutableMapOf<String, Quote>()
     private val pending = mutableMapOf<String, PendingOrder>()
     private val applications = mutableMapOf<String, InstallmentApplication>()
-    private val tradeQuotes = mutableMapOf<String, TradeQuote>()
+    val tradeQuotes = mutableMapOf<String, TradeQuote>()
     private val installmentQuotes = mutableMapOf<String, InstallmentQuote>()
     private var pinAttempts = 0
     private var serialCounter = 500_000
@@ -704,7 +704,7 @@ open class MockRepository(
         return calculateTradeAmounts(isBuy, price, inputGrams, inputSubtotal)
     }
 
-    fun createTradeQuote(isBuy: Boolean, inputGrams: Double? = null, inputSubtotal: Long? = null): TradeQuote {
+    open fun createTradeQuote(isBuy: Boolean, inputGrams: Double? = null, inputSubtotal: Long? = null): TradeQuote {
         val state = _state.value
         val user = state.user ?: fail("UNAUTHENTICATED", "Silakan masuk terlebih dahulu.")
         if (!user.verified && !user.isKycPending) fail("KYC_REQUIRED", "Verifikasi identitas diperlukan sebelum transaksi.")
@@ -732,7 +732,7 @@ open class MockRepository(
         return quote
     }
 
-    fun refreshTradeQuote(quoteId: String): TradeQuote {
+    open fun refreshTradeQuote(quoteId: String): TradeQuote {
         val prev = tradeQuotes[quoteId] ?: fail("QUOTE_NOT_FOUND", "Kutipan harga tidak ditemukan.")
         val now = clock()
         val currentPrice = if (prev.isBuy) _state.value.askPricePerGram else _state.value.buybackPerGram
@@ -754,9 +754,9 @@ open class MockRepository(
         return refreshed
     }
 
-    fun getTradeQuote(quoteId: String): TradeQuote? = tradeQuotes[quoteId]
+    open fun getTradeQuote(quoteId: String): TradeQuote? = tradeQuotes[quoteId]
 
-    fun submitTradeOrder(quoteId: String, method: PaymentMethod): Tx {
+    open fun submitTradeOrder(quoteId: String, method: PaymentMethod): Tx {
         val state = _state.value
         val user = state.user ?: fail("UNAUTHENTICATED", "Silakan masuk terlebih dahulu.")
         if (!user.verified) fail("KYC_REQUIRED", "Verifikasi identitas diperlukan sebelum transaksi.")
@@ -2056,6 +2056,10 @@ open class MockRepository(
     open suspend fun fetchWalletEntries(): List<com.reidig.shared.api.EntryOut> = emptyList()
 
     open suspend fun fetchWithdrawals(): List<com.reidig.shared.api.WithdrawalOut> = emptyList()
+
+    open suspend fun fetchOrders(): List<com.reidig.shared.api.OrderOut> = emptyList()
+
+    open suspend fun fetchTokens(includeClosed: Boolean = false): List<com.reidig.shared.api.TokenOut> = emptyList()
 
     fun getGoldBarStock(): List<GoldBarStock> {
         val sizes = listOf(1.0, 2.0, 3.0, 5.0, 10.0, 25.0, 50.0, 100.0)

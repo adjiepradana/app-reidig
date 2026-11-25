@@ -297,6 +297,128 @@ class ReidigApiClient(
         return response.body()
     }
 
+    // --- Modul 5: Trading Emas (Quotes, Orders & Tokens) Endpoints ---
+
+    /**
+     * Mengunci harga beli atau jual emas dalam bentuk kuotasi (`POST /v1/quotes`).
+     */
+    suspend fun createQuote(skuCode: String, quantity: Int = 1, side: String = "BUY"): QuoteOut {
+        val token = accessToken
+        val response = client.post("/v1/quotes") {
+            contentType(ContentType.Application.Json)
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            setBody(QuoteIn(skuCode = skuCode, quantity = quantity, side = side))
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengeksekusi order pembelian emas berdasarkan ID kuotasi (`POST /v1/orders/buy`).
+     */
+    suspend fun buyOrder(
+        quoteId: String,
+        paymentMethod: String,
+        idempotencyKey: String? = null,
+    ): OrderOut {
+        val token = accessToken
+        val response = client.post("/v1/orders/buy") {
+            contentType(ContentType.Application.Json)
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            if (idempotencyKey != null) {
+                header("Idempotency-Key", idempotencyKey)
+            }
+            setBody(BuyIn(quoteId = quoteId, paymentMethod = paymentMethod))
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengeksekusi order penjualan (buyback) emas berdasarkan ID kuotasi dan token emas (`POST /v1/orders/sell`).
+     */
+    suspend fun sellOrder(
+        quoteId: String,
+        tokenCodes: List<String>,
+        pin: String,
+        idempotencyKey: String? = null,
+    ): OrderOut {
+        val token = accessToken
+        val response = client.post("/v1/orders/sell") {
+            contentType(ContentType.Application.Json)
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            if (idempotencyKey != null) {
+                header("Idempotency-Key", idempotencyKey)
+            }
+            setBody(SellIn(quoteId = quoteId, tokenCodes = tokenCodes, pin = pin))
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengambil daftar seluruh riwayat order pembelian dan penjualan (`GET /v1/orders`).
+     */
+    suspend fun getOrders(): List<OrderOut> {
+        val token = accessToken
+        val response = client.get("/v1/orders") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengambil detail satu pesanan order (`GET /v1/orders/{order_id}`).
+     */
+    suspend fun getOrder(orderId: Int): OrderOut {
+        val token = accessToken
+        val response = client.get("/v1/orders/$orderId") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Membatalkan pesanan order yang berstatus menunggu pembayaran (`POST /v1/orders/{order_id}/cancel`).
+     */
+    suspend fun cancelOrder(orderId: Int): OrderOut {
+        val token = accessToken
+        val response = client.post("/v1/orders/$orderId/cancel") {
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
+    /**
+     * Mengambil daftar kepemilikan kepingan emas digital nasabah (`GET /v1/tokens`).
+     */
+    suspend fun getTokens(includeClosed: Boolean = false): List<TokenOut> {
+        val token = accessToken
+        val response = client.get("/v1/tokens") {
+            parameter("include_closed", includeClosed)
+            if (token != null) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+        checkResponse(response)
+        return response.body()
+    }
+
     /** Keluar dari sesi login. */
     suspend fun logout() {
         val token = accessToken

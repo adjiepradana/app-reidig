@@ -166,6 +166,80 @@ data class WithdrawalOut(
     @SerialName("created_at") val createdAt: String? = null,
 )
 
+// --- Modul 5: Trading Emas (Quotes, Orders & Tokens) ---
+
+@Serializable
+data class QuoteIn(
+    @SerialName("sku_code") val skuCode: String,
+    val quantity: Int = 1,
+    val side: String = "BUY",
+)
+
+@Serializable
+data class QuoteOut(
+    val id: String,
+    @SerialName("sku_code") val skuCode: String,
+    val side: String,
+    val quantity: Int,
+    @SerialName("unit_price") val unitPrice: String,
+    val total: String,
+    @SerialName("buyback_value_now") val buybackValueNow: String? = null,
+    @SerialName("expires_at") val expiresAt: String,
+)
+
+@Serializable
+data class BuyIn(
+    @SerialName("quote_id") val quoteId: String,
+    @SerialName("payment_method") val paymentMethod: String,
+)
+
+@Serializable
+data class SellIn(
+    @SerialName("quote_id") val quoteId: String,
+    @SerialName("token_codes") val tokenCodes: List<String>,
+    val pin: String,
+)
+
+@Serializable
+data class PaymentOut(
+    val id: Int,
+    val method: String,
+    val amount: String,
+    val status: String,
+    @SerialName("payment_code") val paymentCode: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+)
+
+@Serializable
+data class OrderOut(
+    val id: Int,
+    val side: String,
+    val status: String,
+    @SerialName("payment_method") val paymentMethod: String? = null,
+    @SerialName("sku_code") val skuCode: String,
+    val quantity: Int,
+    @SerialName("unit_price") val unitPrice: String,
+    val gross: String,
+    val tax: String,
+    val net: String,
+    @SerialName("pay_before") val payBefore: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("token_codes") val tokenCodes: List<String> = emptyList(),
+    val payment: PaymentOut? = null,
+)
+
+@Serializable
+data class TokenOut(
+    val code: String,
+    @SerialName("sku_code") val skuCode: String,
+    @SerialName("weight_mg") val weightMg: Long,
+    @SerialName("serial_number") val serialNumber: String,
+    val status: String,
+    @SerialName("acquired_price") val acquiredPrice: String,
+    @SerialName("acquired_at") val acquiredAt: String? = null,
+    @SerialName("sellable_at") val sellableAt: String? = null,
+)
+
 @Serializable
 data class ApiErrorDetail(
     val code: String? = null,

@@ -6,11 +6,13 @@ import com.reidig.shared.Branch
 import com.reidig.shared.EmailCodeResult
 import com.reidig.shared.GoldBranch
 import com.reidig.shared.MockRepository
+import com.reidig.shared.PRICE_LOCK_SECONDS
 import com.reidig.shared.PaymentMethod
 import com.reidig.shared.PinVerifyResult
 import com.reidig.shared.ReidigException
 import com.reidig.shared.Rules
 import com.reidig.shared.Sku
+import com.reidig.shared.TradeQuote
 import com.reidig.shared.Tx
 import com.reidig.shared.TxType
 import com.reidig.shared.UserProfile
@@ -48,7 +50,7 @@ class ApiRepository(
                 fetchBranches()
             } catch (_: Exception) {}
         }
-        // Jika token sudah ada (misal dari saved storage), muat profil, harga emas, dan saldo kas dari server
+        // Jika token sudah ada (misal dari saved storage), muat profil, harga emas, saldo kas, order & token dari server
         if (api.accessToken != null) {
             scope.launch {
                 try {
@@ -56,6 +58,8 @@ class ApiRepository(
                     fetchGoldPrice()
                     fetchWallet()
                     fetchWalletEntries()
+                    fetchOrders()
+                    fetchTokens()
                 } catch (_: Exception) {}
             }
         }
@@ -77,6 +81,8 @@ class ApiRepository(
                 fetchBranches()
                 fetchWallet()
                 fetchWalletEntries()
+                fetchOrders()
+                fetchTokens()
             } catch (e: ReidigException) {
                 throw e
             } catch (e: Exception) {
@@ -611,6 +617,203 @@ class ApiRepository(
             }
         }
         return super.topup(amount, method)
+    }
+
+    // --- Modul 5: Trading Emas (Quotes, Orders & Tokens) ---
+
+    override fun createTradeQuote(isBuy: Boolean, inputGrams: Double?, inputSubtotal: Long?): TradeQuote {
+        if (api.accessToken != null) {
+            return runBlocking {
+                try {
+                    val skuCode = "LMRE-1G"
+                    val qty = when {
+                        inputGrams != null && inputGrams > 0.0 -> inputGrams.toInt().coerceAtLeast(1)
+                        inputSubtotal != null && inputSubtotal > 0L -> {
+                            val refPrice = if (isBuy) _state.value.askPricePerGram else _state.value.buybackPerGram
+                            val price = if (refPrice > 0L) refPrice else 2_513_500L
+                            (inputSubtotal / price).toInt().coerceAtLeast(1)
+                        }
+                        else -> 1
+                    }
+                    val quoteOut = api.createQuote(
+                        skuCode = skuCode,
+                        quantity = qty,
+                        side = if (isBuy) "BUY" else "SELL",
+                    )
+                    val now = clock()
+                    val unitPriceLong = quoteOut.unitPrice.toLongOrNull()
+                        ?: if (isBuy) _state.value.askPricePerGram else _state.value.buybackPerGram
+                    val totalLong = quoteOut.total.toLongOrNull() ?: (unitPriceLong * quoteOut.quantity)
+                    val durationMs = try {
+                        val parsed = java.time.Instant.parse(quoteOut.expiresAt).toEpochMilli()
+                        val diff = parsed - java.time.Instant.now().toEpochMilli()
+                        if (diff in 1_000L..300_000L) diff else (PRICE_LOCK_SECONDS * 1000L)
+                    } catch (_: Exception) {
+                        PRICE_LOCK_SECONDS * 1000L
+                    }
+                    val tq = TradeQuote(
+                        id = quoteOut.id,
+                        isBuy = quoteOut.side.equals("BUY", ignoreCase = true),
+                        lockedPricePerGram = unitPriceLong,
+                        grams = if (inputGrams != null && inputGrams > 0.0) inputGrams else quoteOut.quantity.toDouble(),
+                        subtotal = totalLong,
+                        adminFee = 0L,
+                        tax = 0L,
+                        total = totalLong,
+                        lockedAtMs = now,
+                        expiresAtMs = now + durationMs,
+                    )
+                    tradeQuotes[tq.id] = tq
+                    tq
+                } catch (e: ReidigException) {
+                    throw e
+                } catch (e: Exception) {
+                    super.createTradeQuote(isBuy, inputGrams, inputSubtotal)
+                }
+            }
+        }
+        return super.createTradeQuote(isBuy, inputGrams, inputSubtotal)
+    }
+
+    override fun refreshTradeQuote(quoteId: String): TradeQuote {
+        val prev = tradeQuotes[quoteId]
+        if (api.accessToken != null && prev != null) {
+            tradeQuotes.remove(quoteId)
+            return createTradeQuote(isBuy = prev.isBuy, inputGrams = prev.grams, inputSubtotal = prev.subtotal)
+        }
+        return super.refreshTradeQuote(quoteId)
+    }
+
+    override fun submitTradeOrder(quoteId: String, method: PaymentMethod): Tx {
+        if (api.accessToken != null) {
+            val quote = tradeQuotes[quoteId] ?: return super.submitTradeOrder(quoteId, method)
+            return runBlocking {
+                try {
+                    val orderOut = if (quote.isBuy) {
+                        val apiMethod = when (method) {
+                            PaymentMethod.WALLET -> "WALLET"
+                            PaymentMethod.QRIS -> "QRIS"
+                            else -> "VIRTUAL_ACCOUNT"
+                        }
+                        api.buyOrder(
+                            quoteId = quote.id,
+                            paymentMethod = apiMethod,
+                            idempotencyKey = "buy-${clock()}-${quote.id}",
+                        )
+                    } else {
+                        val tokens = runCatching { api.getTokens() }.getOrDefault(emptyList())
+                        val activeTokens = tokens.filter { it.status.equals("ACTIVE", ignoreCase = true) }
+                        val tokenCodes = activeTokens.map { it.code }.take(quote.grams.toInt().coerceAtLeast(1))
+                        val effectivePin = lastVerifiedPin ?: MockRepository.GOLDIN_DEMO_PIN
+                        api.sellOrder(
+                            quoteId = quote.id,
+                            tokenCodes = if (tokenCodes.isNotEmpty()) tokenCodes else listOf("TKN-${quote.id}"),
+                            pin = effectivePin,
+                            idempotencyKey = "sell-${clock()}-${quote.id}",
+                        )
+                    }
+
+                    // Sinkronisasi data setelah transaksi berhasil
+                    fetchWallet()
+                    fetchWalletEntries()
+                    fetchTokens()
+
+                    val now = clock()
+                    val isCompleted = orderOut.status.equals("COMPLETED", ignoreCase = true)
+                    val netAmt = orderOut.net.toLongOrNull() ?: quote.total
+                    val tx = Tx(
+                        id = "ORD-${orderOut.id}",
+                        type = if (quote.isBuy) TxType.BUY else TxType.SELL,
+                        title = if (quote.isBuy) "Beli Emas" else "Jual Emas",
+                        amount = if (quote.isBuy) -netAmt else netAmt,
+                        atMs = now,
+                        status = if (isCompleted) "ok" else "pending",
+                        method = method.label,
+                        paymentMethod = method,
+                        grams = quote.grams,
+                        pricePerGram = orderOut.unitPrice.toLongOrNull() ?: quote.lockedPricePerGram,
+                        subtotal = orderOut.gross.toLongOrNull() ?: quote.subtotal,
+                        fee = 0L,
+                        tax = orderOut.tax.toLongOrNull() ?: quote.tax,
+                        total = netAmt,
+                        payRef = orderOut.payment?.paymentCode ?: "ORD-${orderOut.id}",
+                    )
+                    _state.update { s ->
+                        val updatedGold = if (isCompleted) {
+                            if (quote.isBuy) s.goldBalanceGrams + tx.grams
+                            else (s.goldBalanceGrams - tx.grams).coerceAtLeast(0.0)
+                        } else {
+                            s.goldBalanceGrams
+                        }
+                        s.copy(
+                            goldBalanceGrams = updatedGold,
+                            transactions = listOf(tx) + s.transactions,
+                        )
+                    }
+                    tx
+                } catch (e: ReidigException) {
+                    throw e
+                } catch (e: Exception) {
+                    super.submitTradeOrder(quoteId, method)
+                }
+            }
+        }
+        return super.submitTradeOrder(quoteId, method)
+    }
+
+    override suspend fun fetchOrders(): List<OrderOut> {
+        val token = api.accessToken ?: return emptyList()
+        return try {
+            val orders = api.getOrders()
+            if (orders.isNotEmpty()) {
+                val mappedTxs = orders.map { order ->
+                    val isBuy = order.side.equals("BUY", ignoreCase = true)
+                    val netAmt = order.net.toLongOrNull() ?: 0L
+                    val isCompleted = order.status.equals("COMPLETED", ignoreCase = true)
+                    Tx(
+                        id = "ORD-${order.id}",
+                        type = if (isBuy) TxType.BUY else TxType.SELL,
+                        title = if (isBuy) "Beli Emas" else "Jual Emas",
+                        amount = if (isBuy) -netAmt else netAmt,
+                        atMs = clock(),
+                        status = if (isCompleted) "ok" else "pending",
+                        method = order.paymentMethod ?: "WALLET",
+                        grams = order.quantity.toDouble(),
+                        pricePerGram = order.unitPrice.toLongOrNull() ?: 0L,
+                        subtotal = order.gross.toLongOrNull() ?: 0L,
+                        fee = 0L,
+                        tax = order.tax.toLongOrNull() ?: 0L,
+                        total = netAmt,
+                        payRef = order.payment?.paymentCode ?: "ORD-${order.id}",
+                    )
+                }
+                _state.update { curr ->
+                    val existingIds = curr.transactions.map { it.id }.toSet()
+                    val newTxs = mappedTxs.filter { it.id !in existingIds }
+                    curr.copy(transactions = newTxs + curr.transactions)
+                }
+            }
+            orders
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun fetchTokens(includeClosed: Boolean): List<TokenOut> {
+        val token = api.accessToken ?: return emptyList()
+        return try {
+            val tokens = api.getTokens(includeClosed)
+            val activeGrams = tokens.filter { it.status.equals("ACTIVE", ignoreCase = true) }
+                .sumOf { it.weightMg } / 1000.0
+            if (tokens.isNotEmpty()) {
+                _state.update { curr ->
+                    curr.copy(goldBalanceGrams = activeGrams)
+                }
+            }
+            tokens
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     override fun logout() {

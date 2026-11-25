@@ -1422,4 +1422,148 @@ class MockRepositoryTest {
         assertEquals(202_500L, txWdr.total)
         assertEquals(initialWallet - 202_500L, repoLocal.state.value.walletBalance)
     }
+
+    @Test
+    fun modul5TradingDtosAndOrderFlow() {
+        val json = kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+            coerceInputValues = true
+        }
+
+        // 1. Uji Deserialisasi QuoteOut & Serialisasi QuoteIn
+        val quoteIn = com.reidig.shared.api.QuoteIn(
+            skuCode = "LMRE-1G",
+            quantity = 2,
+            side = "BUY",
+        )
+        val quoteInJson = json.encodeToString(com.reidig.shared.api.QuoteIn.serializer(), quoteIn)
+        assertTrue(quoteInJson.contains("\"sku_code\":\"LMRE-1G\""))
+        assertTrue(quoteInJson.contains("\"quantity\":2"))
+
+        val rawQuoteJson = """
+            {
+                "id": "quote-992-abc",
+                "sku_code": "LMRE-1G",
+                "side": "BUY",
+                "quantity": 2,
+                "unit_price": "2513500",
+                "total": "5027000",
+                "buyback_value_now": "4620000",
+                "expires_at": "2026-11-25T14:30:00Z"
+            }
+        """.trimIndent()
+        val quoteOut = json.decodeFromString<com.reidig.shared.api.QuoteOut>(rawQuoteJson)
+        assertEquals("quote-992-abc", quoteOut.id)
+        assertEquals("LMRE-1G", quoteOut.skuCode)
+        assertEquals("BUY", quoteOut.side)
+        assertEquals(2, quoteOut.quantity)
+        assertEquals("2513500", quoteOut.unitPrice)
+        assertEquals("5027000", quoteOut.total)
+
+        // 2. Uji Serialisasi BuyIn & Deserialisasi OrderOut
+        val buyIn = com.reidig.shared.api.BuyIn(
+            quoteId = "quote-992-abc",
+            paymentMethod = "WALLET",
+        )
+        val buyInJson = json.encodeToString(com.reidig.shared.api.BuyIn.serializer(), buyIn)
+        assertTrue(buyInJson.contains("\"quote_id\":\"quote-992-abc\""))
+        assertTrue(buyInJson.contains("\"payment_method\":\"WALLET\""))
+
+        val rawOrderJson = """
+            {
+                "id": 5501,
+                "side": "BUY",
+                "status": "COMPLETED",
+                "payment_method": "WALLET",
+                "sku_code": "LMRE-1G",
+                "quantity": 2,
+                "unit_price": "2513500",
+                "gross": "5027000",
+                "tax": "0",
+                "net": "5027000",
+                "pay_before": null,
+                "created_at": "2026-11-25T14:00:00Z",
+                "token_codes": ["TKN-001", "TKN-002"],
+                "payment": {
+                    "id": 8801,
+                    "method": "WALLET",
+                    "amount": "5027000",
+                    "status": "PAID",
+                    "payment_code": "WAL-5501",
+                    "expires_at": null
+                }
+            }
+        """.trimIndent()
+        val orderOut = json.decodeFromString<com.reidig.shared.api.OrderOut>(rawOrderJson)
+        assertEquals(5501, orderOut.id)
+        assertEquals("BUY", orderOut.side)
+        assertEquals("COMPLETED", orderOut.status)
+        assertEquals(2, orderOut.quantity)
+        assertEquals("5027000", orderOut.net)
+        assertEquals(2, orderOut.tokenCodes.size)
+        assertNotNull(orderOut.payment)
+        assertEquals("WAL-5501", orderOut.payment?.paymentCode)
+
+        // 3. Uji Serialisasi SellIn & Deserialisasi TokenOut
+        val sellIn = com.reidig.shared.api.SellIn(
+            quoteId = "quote-sell-123",
+            tokenCodes = listOf("TKN-001"),
+            pin = "135790",
+        )
+        val sellInJson = json.encodeToString(com.reidig.shared.api.SellIn.serializer(), sellIn)
+        assertTrue(sellInJson.contains("\"quote_id\":\"quote-sell-123\""))
+        assertTrue(sellInJson.contains("\"pin\":\"135790\""))
+
+        val rawTokenJson = """
+            {
+                "code": "TKN-001",
+                "sku_code": "LMRE-1G",
+                "weight_mg": 1000,
+                "serial_number": "LMR-2026-001",
+                "status": "ACTIVE",
+                "acquired_price": "2513500",
+                "acquired_at": "2026-11-25T14:00:00Z",
+                "sellable_at": "2026-11-25T14:00:00Z"
+            }
+        """.trimIndent()
+        val tokenOut = json.decodeFromString<com.reidig.shared.api.TokenOut>(rawTokenJson)
+        assertEquals("TKN-001", tokenOut.code)
+        assertEquals(1000L, tokenOut.weightMg)
+        assertEquals("ACTIVE", tokenOut.status)
+
+        // 4. Uji Alur Kuotasi & Order Beli/Jual di Repository
+        val repoLocal = MockRepository(clock = { now })
+        repoLocal.login("uji@contoh.id", "Rahasia123")
+        val initialWallet = repoLocal.state.value.walletBalance
+        val initialGold = repoLocal.state.value.goldBalanceGrams
+
+        // Buat Quote Beli 1 Gram
+        val buyQuote = repoLocal.createTradeQuote(isBuy = true, inputGrams = 1.0)
+        assertNotNull(buyQuote)
+        assertTrue(buyQuote.total > 0L)
+        assertEquals(1.0, buyQuote.grams)
+
+        // Eksekusi Order Beli via Wallet
+        val buyTx = repoLocal.submitTradeOrder(buyQuote.id, PaymentMethod.WALLET)
+        assertEquals(TxType.BUY, buyTx.type)
+        assertEquals("ok", buyTx.status)
+        assertEquals(initialGold + 1.0, repoLocal.state.value.goldBalanceGrams)
+        assertEquals(initialWallet - buyQuote.total, repoLocal.state.value.walletBalance)
+
+        // Buat Quote Jual 1 Gram
+        val sellQuote = repoLocal.createTradeQuote(isBuy = false, inputGrams = 1.0)
+        assertNotNull(sellQuote)
+        assertFalse(sellQuote.isBuy)
+        assertEquals(1.0, sellQuote.grams)
+
+        // Eksekusi Order Jual
+        val currentWallet = repoLocal.state.value.walletBalance
+        val currentGold = repoLocal.state.value.goldBalanceGrams
+        val sellTx = repoLocal.submitTradeOrder(sellQuote.id, PaymentMethod.WALLET)
+        assertEquals(TxType.SELL, sellTx.type)
+        assertEquals("ok", sellTx.status)
+        assertEquals(currentGold - 1.0, repoLocal.state.value.goldBalanceGrams)
+        assertEquals(currentWallet + sellQuote.total, repoLocal.state.value.walletBalance)
+    }
 }

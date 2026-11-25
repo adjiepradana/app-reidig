@@ -660,13 +660,18 @@ fun TradeCheckoutScreen(
                     showPinDrawer = false
                     isSubmittingOrder = true
                     scope.launch {
-                        delay(1600L) // Simulasi "Mengirim order ke Bursa & Kliring…"
-                        val tx = env.repo.submitTradeOrder(quote.id, selectedMethod)
-                        isSubmittingOrder = false
-                        if (tx.status == "ok") {
-                            onDone(tx.id)
-                        } else {
-                            onPayWait(tx.id)
+                        try {
+                            delay(1600L) // Tampilkan animasi overlay "Mengirim order ke Bursa & Kliring…"
+                            val tx = env.repo.submitTradeOrder(quote.id, selectedMethod)
+                            isSubmittingOrder = false
+                            if (tx.status == "ok") {
+                                onDone(tx.id)
+                            } else {
+                                onPayWait(tx.id)
+                            }
+                        } catch (e: Exception) {
+                            isSubmittingOrder = false
+                            env.notify(e.message ?: "Gagal memproses transaksi.")
                         }
                     }
                 },
